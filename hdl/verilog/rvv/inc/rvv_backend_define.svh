@@ -1,12 +1,6 @@
 `ifndef HDL_VERILOG_RVV_DESIGN_RVV_DEFINE_SVH
 `define HDL_VERILOG_RVV_DESIGN_RVV_DEFINE_SVH
 
-`ifndef RVV_CONFIG_SVH
-`ifndef RVV_CONFIG_SVH
-`include "rvv_backend_config.svh"
-`endif
-`endif 
-
 // number of scalar core issue lane
 `define ISSUE_LANE              4
 
@@ -68,7 +62,6 @@
 `define NUM_LSU                 2
 `define NUM_ALU                 2
 `define NUM_MUL                 2
-// TODO: split NUM_PMTRDT into NUM_PMT and NUM_RDT
 `define NUM_PMTRDT              1
 `define NUM_DIV                 1
 

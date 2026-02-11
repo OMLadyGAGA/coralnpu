@@ -1,11 +1,6 @@
 `ifndef DIV_DEFINE_SVH
 `define DIV_DEFINE_SVH
 
-typedef enum logic [0:0]{
-  DIV_SIGN, 
-  DIV_ZERO
-} DIV_SIGN_SRC_e;   
-
 typedef struct packed {
 `ifdef TB_SUPPORT
   logic   [`PC_WIDTH-1:0]         uop_pc;
