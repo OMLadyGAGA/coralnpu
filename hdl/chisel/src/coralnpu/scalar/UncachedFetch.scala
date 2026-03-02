@@ -287,16 +287,21 @@ class Fetcher(p: Parameters) extends Module {
   val lsb = log2Ceil(p.fetchDataBits / 8)
   assert((p.fetchDataBits == 128 && lsb == 4) || (p.fetchDataBits == 256 && lsb == 5))
 
-  val txidAllocator = Module(new IndexAllocatorShifting(2))
+  val maxConcurrentTx = 2
+  val txidAllocator = Module(new IndexAllocatorShifting(maxConcurrentTx))
 
-  // TODO(davidgao): parameterize the depth of this bookkeeping queue
-  val firedReads = Module(new Queue(new Bundle {
-    val addr = UInt(p.fetchAddrBits.W)
-    val fault = Bool()
-    val txid = UInt(2.W)
-  }, 1, pipe=true))
+  // The reorder buffer does not flow the response. This serves as the delay
+  // cycle to break the rdata->addr loop.
+  // TODO(davidgao): upgrade ibus and move the delay upstream.
+  val reorderBuffer = Module(new FetchReorderBuffer(
+      txidBits=txidAllocator.width,
+      addrBits=p.fetchAddrBits,
+      dataBits=p.fetchDataBits,
+      capacity=maxConcurrentTx,
+      flowResponse=false,
+  ))
 
-  val canStartFetch = io.ctrl.valid && firedReads.io.enq.ready && txidAllocator.io.alloc.valid
+  val canStartFetch = io.ctrl.valid && reorderBuffer.io.newTx.ready && txidAllocator.io.alloc.valid
   // The fetch request goes through without stopping.
   io.ibus.valid := canStartFetch
   io.ibus.addr := Cat(io.ctrl.bits(p.fetchAddrBits - 1, lsb), 0.U(lsb.W))
@@ -305,41 +310,29 @@ class Fetcher(p: Parameters) extends Module {
   // TODO(davidgao): Add txid to ibus interface
   // io.ibus.txid := txidAllocator.io.alloc.bits
   txidAllocator.io.alloc.ready := ibusAddrFire
-
-  // The ibus can have pipeline and we need to bookkeep:
-  // - The address of each transaction
-  // - Fault of each transaction, currently combinatorial from the address
-  // - Transaction ID
-  // A temporary adapter between our fixed-latency ibus and the fetcher.
-  // An additional delay cycle breaks the rdata->addr loop.
-  // TODO(davidgao): upgrade ibus and move the delay upstream.
-  val ibusDataFire = RegNext(RegNext(ibusAddrFire, false.B), false.B)
-  val ignoreResp = RegNext(io.flushTx)
-  val rData = RegNext(io.ibus.rdata)
-  val txidCompleted = RegNext(RegNext(txidAllocator.io.alloc.bits))
-  firedReads.io.enq.valid := ibusAddrFire
-  firedReads.io.enq.bits.addr := io.ctrl.bits
-  firedReads.io.enq.bits.fault := io.ibus.fault.valid
-  firedReads.io.enq.bits.txid := txidAllocator.io.alloc.bits
-  // IBus is still in-order atm so this temporary bookkeeper doesn't need to reorder.
-  when (ibusDataFire) {
-    assert(firedReads.io.deq.valid)
-    assert(txidCompleted === firedReads.io.deq.bits.txid)
-  }
-  firedReads.io.deq.ready := ibusDataFire
+  reorderBuffer.io.newTx.valid := ibusAddrFire
+  reorderBuffer.io.newTx.bits.addr := io.ctrl.bits
+  reorderBuffer.io.newTx.bits.txid := txidAllocator.io.alloc.bits
+  // TODO(davidgao): remove this adapter when we decouple data from addr on ibus
+  reorderBuffer.io.busResp.valid := RegNext(ibusAddrFire, false.B)
+  reorderBuffer.io.busResp.bits.txid := RegNext(txidAllocator.io.alloc.bits)
+  reorderBuffer.io.busResp.bits.resp.data := io.ibus.rdata
+  reorderBuffer.io.busResp.bits.resp.fault := RegNext(io.ibus.fault.valid)
+  // Currently nothing blocks us from committing a transaction.
+  reorderBuffer.io.commit.ready := true.B
+  reorderBuffer.io.flush := io.flushTx
   io.ctrl.ready := ibusAddrFire
 
-  txidAllocator.io.free.valid := ibusDataFire
-  txidAllocator.io.free.bits := txidCompleted
+  txidAllocator.io.free.valid := reorderBuffer.io.freeTxid.valid
+  txidAllocator.io.free.bits := reorderBuffer.io.freeTxid.bits
 
   val result = MakeValid(
-      ibusDataFire && !ignoreResp,
+      reorderBuffer.io.commit.fire,
       MakeWireBundle[FetchResponse](
           new FetchResponse(p),
-          _.addr -> firedReads.io.deq.bits.addr,
-          // RegNext's width is unset
-          _.inst -> UIntToVec(rData(p.fetchDataBits - 1, 0), p.instructionBits),
-          _.fault -> firedReads.io.deq.bits.fault,
+          _.addr -> reorderBuffer.io.commit.bits.addr,
+          _.inst -> UIntToVec(reorderBuffer.io.commit.bits.resp.data, p.instructionBits),
+          _.fault -> reorderBuffer.io.commit.bits.resp.fault,
       )
   )
 
