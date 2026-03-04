@@ -35,8 +35,7 @@ module rvv_backend_fdiv_unit(
   fpnew_pkg::operation_e              op_type;
   logic [`VLEN-1:0]                   src2;
   logic [`VLEN-1:0]                   src1;
-  logic                               fdiv_busy_e;
-  logic                               fdiv_busy;
+  logic [`VLENW-1:0]                  fdiv_ready;
   FDIV_RES_t                          uop_info;
   FDIV_RES_t                          uop_info_d1;
   fpnew_pkg::roundmode_e              frm;
@@ -74,22 +73,6 @@ module rvv_backend_fdiv_unit(
     endcase
   end
 
-  // fdiv is ready to receive a new uop
-  assign fdiv_uop_ready = !fdiv_busy || result_valid&result_ready;
-
-  assign fdiv_busy_e = fdiv_busy ? result_valid&result_ready : fdiv_uop_valid;
-
-  cdffr
-  is_busy
-  (
-    .clk    (clk),
-    .rst_n  (rst_n),
-    .e      (fdiv_busy_e),
-    .c      (trap_flush_rvv),
-    .d      (fdiv_busy_e&fdiv_uop_valid),
-    .q      (fdiv_busy)
-  );
-
   // register information 
 `ifdef TB_SUPPORT
   assign uop_info.uop_pc    = fdiv_uop.uop_pc;
@@ -120,10 +103,13 @@ module rvv_backend_fdiv_unit(
   end
 
   generate
+    // ready to receive
+    assign fdiv_uop_ready = &fdiv_ready;
+
     for(i=0;i<`VLENW;i++) begin:fdiv
       fpnew_divsqrt_th_64_multi #(
         .FpFmtConfig        (5'b10000),
-        .NumPipeRegs        (1),
+        .NumPipeRegs        (0),
         .PipeConfig         (fpnew_pkg::BEFORE)
       )
       fdiv(
@@ -141,7 +127,7 @@ module rvv_backend_fdiv_unit(
         .vectorial_op_i     ('0),
         // Input Handshake
         .in_valid_i         (fdiv_uop_valid&fdiv_uop_ready),
-        .in_ready_o         (),
+        .in_ready_o         (fdiv_ready[i]),
         .divsqrt_done_o     (),
         .simd_synch_done_i  ('0),
         .divsqrt_ready_o    (),
@@ -168,6 +154,7 @@ module rvv_backend_fdiv_unit(
     // submit result to ROB
       assign result.fpexp[i*4+:4] = {4{sub_fpexp[i]}};
     end
+    
     assign result_valid     = &sub_result_vld;
   `ifdef TB_SUPPORT
     assign result.uop_pc    = uop_info_d1.uop_pc;

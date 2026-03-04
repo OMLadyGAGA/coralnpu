@@ -76,7 +76,7 @@ module rvv_backend_decode_ctrl
     if (`NUM_DE_INST==3'd2) begin : if_inst_eq_2 // `NUM_DE_INST==2
       if(`NUM_DE_UOP>=3'd3) begin : gen_push2_uop2
         always_comb begin
-          casex({de_uop_valid[1][1:0],de_uop_valid[0][2:1]})
+          casez({de_uop_valid[1][1:0],de_uop_valid[0][2:1]})
             4'b??_11: begin
               push[2] = uq_ready[2];
               uop[2]  = de_uop[0][2];
@@ -99,7 +99,7 @@ module rvv_backend_decode_ctrl
     
       if(`NUM_DE_UOP>=3'd4) begin : gen_push3_uop3
         always_comb begin
-          casex({de_uop_valid[1][2:0],de_uop_valid[0][3:1]})
+          casez({de_uop_valid[1][2:0],de_uop_valid[0][3:1]})
             6'b???_111: begin
               push[3] = uq_ready[3];
               uop[3]  = de_uop[0][3];
@@ -126,7 +126,7 @@ module rvv_backend_decode_ctrl
 
       if(`NUM_DE_UOP>=3'd5) begin : gen_push4_uop4
         always_comb begin
-          casex({de_uop_valid[1][3:0],de_uop_valid[0][4:1]})
+          casez({de_uop_valid[1][3:0],de_uop_valid[0][4:1]})
             8'b????_1111: begin
               push[4] = uq_ready[4];
               uop[4]  = de_uop[0][4];
@@ -157,7 +157,7 @@ module rvv_backend_decode_ctrl
 
       if(`NUM_DE_UOP>=3'd6) begin : gen_push5_uop5
         always_comb begin
-          casex({de_uop_valid[1][4:0],de_uop_valid[0][5:1]})
+          casez({de_uop_valid[1][4:0],de_uop_valid[0][5:1]})
             10'b?????_11111: begin
               push[5] = uq_ready[5];
               uop[5]  = de_uop[0][5];
@@ -194,7 +194,7 @@ module rvv_backend_decode_ctrl
     if (`NUM_DE_INST==3'd3) begin : if_inst_eq_3
       if(`NUM_DE_UOP>=3'd3) begin : gen_push2_uop2
         always_comb begin
-          casex({de_uop_valid[2][0],de_uop_valid[1][1:0],de_uop_valid[0][2:1]})
+          casez({de_uop_valid[2][0],de_uop_valid[1][1:0],de_uop_valid[0][2:1]})
             5'b?_??_11: begin
               push[2] = uq_ready[2];
               uop[2]  = de_uop[0][2];
@@ -221,7 +221,7 @@ module rvv_backend_decode_ctrl
     
       if(`NUM_DE_UOP>=3'd4) begin : gen_push3_uop3
         always_comb begin
-          casex({de_uop_valid[2][1:0],de_uop_valid[1][2:0],de_uop_valid[0][3:1]})
+          casez({de_uop_valid[2][1:0],de_uop_valid[1][2:0],de_uop_valid[0][3:1]})
             8'b??_???_111: begin
               push[3] = uq_ready[3];
               uop[3]  = de_uop[0][3];
@@ -260,7 +260,7 @@ module rvv_backend_decode_ctrl
 
       if(`NUM_DE_UOP>=3'd5) begin : gen_push4_uop4
         always_comb begin
-          casex({de_uop_valid[2][2:0],de_uop_valid[1][3:0],de_uop_valid[0][4:1]})
+          casez({de_uop_valid[2][2:0],de_uop_valid[1][3:0],de_uop_valid[0][4:1]})
             11'b???_????_1111: begin
               push[4] = uq_ready[4];
               uop[4]  = de_uop[0][4];
@@ -315,7 +315,7 @@ module rvv_backend_decode_ctrl
 
       if(`NUM_DE_UOP>=3'd6) begin : gen_push5_uop5
         always_comb begin
-          casex({de_uop_valid[2][3:0],de_uop_valid[1][4:0],de_uop_valid[0][5:1]})
+          casez({de_uop_valid[2][3:0],de_uop_valid[1][4:0],de_uop_valid[0][5:1]})
             14'b????_?????_11111: begin
               push[5] = uq_ready[5];
               uop[5]  = de_uop[0][5];
@@ -392,7 +392,7 @@ module rvv_backend_decode_ctrl
     if (`NUM_DE_INST==3'd4) begin : if_inst_eq_4
       if(`NUM_DE_UOP>=3'd3) begin : gen_push2_uop2
         always_comb begin
-          casex({de_uop_valid[2][0],de_uop_valid[1][1:0],de_uop_valid[0][2:1]})
+          casez({de_uop_valid[2][0],de_uop_valid[1][1:0],de_uop_valid[0][2:1]})
             5'b?_??_11: begin
               push[2] = uq_ready[2];
               uop[2]  = de_uop[0][2];
@@ -419,7 +419,7 @@ module rvv_backend_decode_ctrl
     
       if(`NUM_DE_UOP>=3'd4) begin : gen_push3_uop3
         always_comb begin
-          casex({de_uop_valid[3][0],de_uop_valid[2][1:0],de_uop_valid[1][2:0],de_uop_valid[0][3:1]})
+          casez({de_uop_valid[3][0],de_uop_valid[2][1:0],de_uop_valid[1][2:0],de_uop_valid[0][3:1]})
             9'b?_??_???_111: begin
               push[3] = uq_ready[3];
               uop[3]  = de_uop[0][3];
@@ -462,7 +462,7 @@ module rvv_backend_decode_ctrl
 
       if(`NUM_DE_UOP>=3'd5) begin : gen_push4_uop4
         always_comb begin
-          casex({de_uop_valid[3][1:0],de_uop_valid[2][2:0],de_uop_valid[1][3:0],de_uop_valid[0][4:1]})
+          casez({de_uop_valid[3][1:0],de_uop_valid[2][2:0],de_uop_valid[1][3:0],de_uop_valid[0][4:1]})
             13'b??_???_????_1111: begin
               push[4] = uq_ready[4];
               uop[4]  = de_uop[0][4];
@@ -533,7 +533,7 @@ module rvv_backend_decode_ctrl
 
       if(`NUM_DE_UOP>=3'd6) begin : gen_push5_uop5
         always_comb begin
-          casex({de_uop_valid[3][2:0],de_uop_valid[2][3:0],de_uop_valid[1][4:0],de_uop_valid[0][5:1]})
+          casez({de_uop_valid[3][2:0],de_uop_valid[2][3:0],de_uop_valid[1][4:0],de_uop_valid[0][5:1]})
             17'b???_????_?????_11111: begin
               push[5] = uq_ready[5];
               uop[5]  = de_uop[0][5];
