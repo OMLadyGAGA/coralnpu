@@ -243,6 +243,26 @@ SAME_TYPE_BINARY_OPS = [
     "VNMSAC",
     "VMADD",
     "VNMSUB",
+    "VFADD",
+    "VFSUB",
+    "VFMUL",
+    "VFDIV",
+    "VFMIN",
+    "VFMAX",
+    "VFSGNJ",
+    "VFSGNJN",
+    "VFSGNJX",
+    "VFMACC",
+    "VFNMACC",
+    "VFMADD",
+    "VFNMADD",
+    "VFMSAC",
+    "VFNMSAC",
+    "VFMSUB",
+    "VFNMSUB",
+    "VFRSUB",
+    "VFRDIV",
+    "VFSQRT",
 ]
 
 SAME_TYPE_FLOAT_BINARY_OPS = [
@@ -349,6 +369,25 @@ template<> struct SameTypeBinaryOpTraits<float, Lmul::{lmul}> {{
   static constexpr auto vfsgnjn_vf = __riscv_vfsgnjn_vf_{base_type};
   static constexpr auto vfsgnjx_vv = __riscv_vfsgnjx_vv_{base_type};
   static constexpr auto vfsgnjx_vf = __riscv_vfsgnjx_vf_{base_type};
+  static constexpr auto vfmacc_vv = __riscv_vfmacc_vv_{base_type};
+  static constexpr auto vfmacc_vf = __riscv_vfmacc_vf_{base_type};
+  static constexpr auto vfnmacc_vv = __riscv_vfnmacc_vv_{base_type};
+  static constexpr auto vfnmacc_vf = __riscv_vfnmacc_vf_{base_type};
+  static constexpr auto vfmadd_vv = __riscv_vfmadd_vv_{base_type};
+  static constexpr auto vfmadd_vf = __riscv_vfmadd_vf_{base_type};
+  static constexpr auto vfnmadd_vv = __riscv_vfnmadd_vv_{base_type};
+  static constexpr auto vfnmadd_vf = __riscv_vfnmadd_vf_{base_type};
+  static constexpr auto vfmsac_vv = __riscv_vfmsac_vv_{base_type};
+  static constexpr auto vfmsac_vf = __riscv_vfmsac_vf_{base_type};
+  static constexpr auto vfnmsac_vv = __riscv_vfnmsac_vv_{base_type};
+  static constexpr auto vfnmsac_vf = __riscv_vfnmsac_vf_{base_type};
+  static constexpr auto vfmsub_vv = __riscv_vfmsub_vv_{base_type};
+  static constexpr auto vfmsub_vf = __riscv_vfmsub_vf_{base_type};
+  static constexpr auto vfnmsub_vv = __riscv_vfnmsub_vv_{base_type};
+  static constexpr auto vfnmsub_vf = __riscv_vfnmsub_vf_{base_type};
+  static constexpr auto vfrsub_vf = __riscv_vfrsub_vf_{base_type};
+  static constexpr auto vfrdiv_vf = __riscv_vfrdiv_vf_{base_type};
+  static constexpr auto vfsqrt_v = __riscv_vfsqrt_v_{base_type};
 }};"""
 
 def mixed_sign_same_width_type_binary_op_trait(bit_count, signed, lmul):
@@ -486,6 +525,58 @@ template<> struct ComparisonOpTraits<{unsigned}int{bit_count}_t, Lmul::{lmul}> {
   static constexpr auto vmsge_vx = __riscv_vmsgeu_vx_{base_type}_b{m};"""
     trait += "\n};"
     return trait
+
+
+def float_comparison_op_trait(bit_count, lmul):
+    base_type = f"f{bit_count}{lmul.lower()}"
+    m = get_mask_n(bit_count, lmul)
+    return f"""
+template<> struct FloatComparisonOpTraits<float, Lmul::{lmul}> {{
+  static constexpr auto vmfeq_vv = __riscv_vmfeq_vv_{base_type}_b{m};
+  static constexpr auto vmfeq_vf = __riscv_vmfeq_vf_{base_type}_b{m};
+  static constexpr auto vmfne_vv = __riscv_vmfne_vv_{base_type}_b{m};
+  static constexpr auto vmfne_vf = __riscv_vmfne_vf_{base_type}_b{m};
+  static constexpr auto vmflt_vv = __riscv_vmflt_vv_{base_type}_b{m};
+  static constexpr auto vmflt_vf = __riscv_vmflt_vf_{base_type}_b{m};
+  static constexpr auto vmfle_vv = __riscv_vmfle_vv_{base_type}_b{m};
+  static constexpr auto vmfle_vf = __riscv_vmfle_vf_{base_type}_b{m};
+  static constexpr auto vmfgt_vf = __riscv_vmfgt_vf_{base_type}_b{m};
+  static constexpr auto vmfge_vf = __riscv_vmfge_vf_{base_type}_b{m};
+}};"""
+
+
+def float_misc_op_trait(bit_count, lmul):
+    base_type = f"f{bit_count}{lmul.lower()}"
+    return f"""
+template<> struct FloatMiscOpTraits<float, Lmul::{lmul}> {{
+  static constexpr auto vfclass_v = __riscv_vfclass_v_u{bit_count}{lmul.lower()};
+  static constexpr auto vfmerge_vfm = __riscv_vfmerge_vfm_{base_type};
+  static constexpr auto vfmv_v_f = __riscv_vfmv_v_f_{base_type};
+}};"""
+
+
+def float_convert_op_trait(bit_count, lmul):
+    base_type = f"f{bit_count}{lmul.lower()}"
+    return f"""
+template<> struct FloatConvertOpTraits<float, Lmul::{lmul}> {{
+  static constexpr auto vfcvt_f_x_v = __riscv_vfcvt_f_x_v_{base_type};
+  static constexpr auto vfcvt_f_xu_v = __riscv_vfcvt_f_xu_v_{base_type};
+  static constexpr auto vfcvt_x_f_v = __riscv_vfcvt_x_f_v_i32{lmul.lower()};
+  static constexpr auto vfcvt_xu_f_v = __riscv_vfcvt_xu_f_v_u32{lmul.lower()};
+  static constexpr auto vfcvt_rtz_x_f_v = __riscv_vfcvt_rtz_x_f_v_i32{lmul.lower()};
+  static constexpr auto vfcvt_rtz_xu_f_v = __riscv_vfcvt_rtz_xu_f_v_u32{lmul.lower()};
+}};"""
+
+
+def float_widen_narrow_convert_trait(signed, lmul):
+    u = "i" if signed else "u"
+    xu = "x" if signed else "xu"
+    t = "int16_t" if signed else "uint16_t"
+    res = f"template<> struct FloatWidenNarrowConvertTraits<{t}, Lmul::{lmul}> {{\n"
+    res += f"  static constexpr auto vfwcvt_f_v = __riscv_vfwcvt_f_{xu}_v_f32{widen(lmul).lower()};\n"
+    res += f"  static constexpr auto vfncvt_v = __riscv_vfncvt_{xu}_f_w_{u}16{lmul.lower()};\n"
+    res += "};"
+    return res
 
 def camel_case(x):
     return x[0] + x[1:].lower()
@@ -626,13 +717,36 @@ def main():
     for signed, (bit_count, lmul) in all_signed_bitcounts_lmuls():
         header.append(comparison_op_trait(bit_count, signed, lmul))
 
+    # Float Comparison Op Traits
+    header.append("template<typename T, Lmul lmul> struct FloatComparisonOpTraits {};")
+    for bit_count, lmul in all_float_bitcounts_lmuls():
+        header.append(float_comparison_op_trait(bit_count, lmul))
+
+    # Float Misc Op Traits
+    header.append("template<typename T, Lmul lmul> struct FloatMiscOpTraits {};")
+    for bit_count, lmul in all_float_bitcounts_lmuls():
+        header.append(float_misc_op_trait(bit_count, lmul))
+
+    # Float Convert Op Traits
+    header.append("template<typename T, Lmul lmul> struct FloatConvertOpTraits {};")
+    for bit_count, lmul in all_float_bitcounts_lmuls():
+        header.append(float_convert_op_trait(bit_count, lmul))
+
+    # Widen/Narrow Float Convert Op Traits
+    header.append(
+        "template<typename T, Lmul lmul> struct FloatWidenNarrowConvertTraits {};"
+    )
+    for lmul in ["MF2", "M1", "M2", "M4"]:
+        header.append(float_widen_narrow_convert_trait(True, lmul))
+        header.append(float_widen_narrow_convert_trait(False, lmul))
+
     # Binary Wrappers
     for binary_op in SAME_TYPE_BINARY_OPS:
         needs_vxrm = binary_op in ["VAADD", "VASUB", "VSMUL"]
         vxrm_template = ", uint32_t vxrm = 0" if needs_vxrm else ""
         vxrm_call = ", vxrm" if needs_vxrm else ""
 
-        if binary_op != "VRSUB":
+        if binary_op not in ["VRSUB", "VFRSUB", "VFRDIV", "VFSQRT"]:
             if binary_op == "VSMUL":
                 header.append(f"""
 template<typename T, Lmul lmul {vxrm_template}> RvvType<T, lmul>
@@ -650,21 +764,35 @@ template<typename T, Lmul lmul {vxrm_template}> RvvType<T, lmul>
   return SameTypeBinaryOpTraits<T, lmul>::{binary_op.lower()}_vv(vs1, vs2 {vxrm_call}, vl);
 }}""")
 
-        if binary_op == "VSMUL":
-            header.append(f"""
+        if binary_op != "VFSQRT":
+            if binary_op == "VSMUL":
+                header.append(f"""
 template<typename T, Lmul lmul {vxrm_template}> RvvType<T, lmul>
 {camel_case(binary_op)}(RvvType<T, lmul> vs1, T xs2, size_t vl) {{
-  if constexpr (std::is_signed_v<T>) {{
+  if constexpr (std::is_floating_point_v<T>) {{
+    return SameTypeBinaryOpTraits<T, lmul>::{binary_op.lower()}_vf(vs1, xs2 {vxrm_call}, vl);
+  }} else if constexpr (std::is_signed_v<T>) {{
     return SameTypeBinaryOpTraits<T, lmul>::{binary_op.lower()}_vx(vs1, xs2 {vxrm_call}, vl);
   }} else {{
     return vs1; // Should not be called
   }}
 }}""")
-        else:
-            header.append(f"""
+            else:
+                header.append(f"""
 template<typename T, Lmul lmul {vxrm_template}> RvvType<T, lmul>
 {camel_case(binary_op)}(RvvType<T, lmul> vs1, T xs2, size_t vl) {{
-  return SameTypeBinaryOpTraits<T, lmul>::{binary_op.lower()}_vx(vs1, xs2 {vxrm_call}, vl);
+  if constexpr (std::is_floating_point_v<T>) {{
+    return SameTypeBinaryOpTraits<T, lmul>::{binary_op.lower()}_vf(vs1, xs2 {vxrm_call}, vl);
+  }} else {{
+    return SameTypeBinaryOpTraits<T, lmul>::{binary_op.lower()}_vx(vs1, xs2 {vxrm_call}, vl);
+  }}
+}}""")
+
+        if binary_op == "VFSQRT":
+            header.append(f"""
+template<typename T, Lmul lmul> RvvType<T, lmul>
+Vfsqrt(RvvType<T, lmul> vs2, size_t vl) {{
+  return SameTypeBinaryOpTraits<T, lmul>::vfsqrt_v(vs2, vl);
 }}""")
 
         # .vi wrappers
@@ -681,17 +809,44 @@ VrsubVi(RvvType<T, lmul> vs1, size_t vl) {{
   return SameTypeBinaryOpTraits<T, lmul>::vrsub_vx(vs1, 5, vl);
 }}""")
 
-    # Float Binary Wrappers
-    for binary_op in SAME_TYPE_FLOAT_BINARY_OPS:
-        header.append(f"""
-template<typename T, Lmul lmul> RvvType<T, lmul>
-{camel_case(binary_op)}(RvvType<T, lmul> vs1, RvvType<T, lmul> vs2, size_t vl) {{
-  return SameTypeBinaryOpTraits<T, lmul>::{binary_op.lower()}_vv(vs1, vs2, vl);
-}}
-template<typename T, Lmul lmul> RvvType<T, lmul>
-{camel_case(binary_op)}(RvvType<T, lmul> vs1, T fs2, size_t vl) {{
-  return SameTypeBinaryOpTraits<T, lmul>::{binary_op.lower()}_vf(vs1, fs2, vl);
-}}""")
+    # Float Comparison Wrappers
+    header.append("""
+template<typename T, Lmul lmul> MaskType<T, lmul> Vmfeq(RvvType<T, lmul> vs2, RvvType<T, lmul> vs1, size_t vl) { return FloatComparisonOpTraits<T, lmul>::vmfeq_vv(vs2, vs1, vl); }
+template<typename T, Lmul lmul> MaskType<T, lmul> Vmfeq(RvvType<T, lmul> vs2, T fs1, size_t vl) { return FloatComparisonOpTraits<T, lmul>::vmfeq_vf(vs2, fs1, vl); }
+template<typename T, Lmul lmul> MaskType<T, lmul> Vmfne(RvvType<T, lmul> vs2, RvvType<T, lmul> vs1, size_t vl) { return FloatComparisonOpTraits<T, lmul>::vmfne_vv(vs2, vs1, vl); }
+template<typename T, Lmul lmul> MaskType<T, lmul> Vmfne(RvvType<T, lmul> vs2, T fs1, size_t vl) { return FloatComparisonOpTraits<T, lmul>::vmfne_vf(vs2, fs1, vl); }
+template<typename T, Lmul lmul> MaskType<T, lmul> Vmflt(RvvType<T, lmul> vs2, RvvType<T, lmul> vs1, size_t vl) { return FloatComparisonOpTraits<T, lmul>::vmflt_vv(vs2, vs1, vl); }
+template<typename T, Lmul lmul> MaskType<T, lmul> Vmflt(RvvType<T, lmul> vs2, T fs1, size_t vl) { return FloatComparisonOpTraits<T, lmul>::vmflt_vf(vs2, fs1, vl); }
+template<typename T, Lmul lmul> MaskType<T, lmul> Vmfle(RvvType<T, lmul> vs2, RvvType<T, lmul> vs1, size_t vl) { return FloatComparisonOpTraits<T, lmul>::vmfle_vv(vs2, vs1, vl); }
+template<typename T, Lmul lmul> MaskType<T, lmul> Vmfle(RvvType<T, lmul> vs2, T fs1, size_t vl) { return FloatComparisonOpTraits<T, lmul>::vmfle_vf(vs2, fs1, vl); }
+template<typename T, Lmul lmul> MaskType<T, lmul> Vmfgt(RvvType<T, lmul> vs2, T fs1, size_t vl) { return FloatComparisonOpTraits<T, lmul>::vmfgt_vf(vs2, fs1, vl); }
+template<typename T, Lmul lmul> MaskType<T, lmul> Vmfge(RvvType<T, lmul> vs2, T fs1, size_t vl) { return FloatComparisonOpTraits<T, lmul>::vmfge_vf(vs2, fs1, vl); }
+""")
+
+    # Float Misc Wrappers
+    header.append("""
+template<typename T, Lmul lmul> RvvType<uint32_t, lmul> Vfclass(RvvType<T, lmul> vs2, size_t vl) { return FloatMiscOpTraits<T, lmul>::vfclass_v(vs2, vl); }
+template<typename T, Lmul lmul> RvvType<T, lmul> Vfmerge(RvvType<T, lmul> vs2, T fs1, MaskType<T, lmul> v0, size_t vl) { return FloatMiscOpTraits<T, lmul>::vfmerge_vfm(vs2, fs1, v0, vl); }
+template<typename T, Lmul lmul> RvvType<T, lmul> Vfmv(T fs1, size_t vl) { return FloatMiscOpTraits<T, lmul>::vfmv_v_f(fs1, vl); }
+""")
+
+    # Float Convert Wrappers
+    header.append("""
+template<typename T, Lmul lmul> RvvType<T, lmul> VfcvtFX(RvvType<int32_t, lmul> vs2, size_t vl) { return FloatConvertOpTraits<T, lmul>::vfcvt_f_x_v(vs2, vl); }
+template<typename T, Lmul lmul> RvvType<T, lmul> VfcvtFXu(RvvType<uint32_t, lmul> vs2, size_t vl) { return FloatConvertOpTraits<T, lmul>::vfcvt_f_xu_v(vs2, vl); }
+template<typename T, Lmul lmul> RvvType<int32_t, lmul> VfcvtXF(RvvType<T, lmul> vs2, size_t vl) { return FloatConvertOpTraits<T, lmul>::vfcvt_x_f_v(vs2, vl); }
+template<typename T, Lmul lmul> RvvType<uint32_t, lmul> VfcvtXuF(RvvType<T, lmul> vs2, size_t vl) { return FloatConvertOpTraits<T, lmul>::vfcvt_xu_f_v(vs2, vl); }
+template<typename T, Lmul lmul> RvvType<int32_t, lmul> VfcvtRtzXF(RvvType<T, lmul> vs2, size_t vl) { return FloatConvertOpTraits<T, lmul>::vfcvt_rtz_x_f_v(vs2, vl); }
+template<typename T, Lmul lmul> RvvType<uint32_t, lmul> VfcvtRtzXuF(RvvType<T, lmul> vs2, size_t vl) { return FloatConvertOpTraits<T, lmul>::vfcvt_rtz_xu_f_v(vs2, vl); }
+
+template<typename T, Lmul lmul> RvvType<float, Widen(lmul)> VfwcvtFX(RvvType<T, lmul> vs2, size_t vl) {
+  return FloatWidenNarrowConvertTraits<T, lmul>::vfwcvt_f_v(vs2, vl);
+}
+
+template<typename T, Lmul lmul> RvvType<T, lmul> VfncvtXF(RvvType<float, Widen(lmul)> vs2, size_t vl) {
+  return FloatWidenNarrowConvertTraits<T, lmul>::vfncvt_v(vs2, vl);
+}
+""")
 
     # Shift Wrappers
     for shift_op in ["VSLL", "VSRL", "VSRA", "VSSRA", "VSSRL"]:
@@ -741,11 +896,28 @@ template<typename T, Lmul lmul> RvvType<WidenType<T>, Widen(lmul)>
 }}""")
 
     # Ternary Wrappers
-    for ternary_op in ["VMACC", "VNMSAC", "VMADD", "VNMSUB"]:
+    for ternary_op in [
+        "VMACC",
+        "VNMSAC",
+        "VMADD",
+        "VNMSUB",
+        "VFMACC",
+        "VFNMACC",
+        "VFMADD",
+        "VFNMADD",
+        "VFMSAC",
+        "VFNMSAC",
+        "VFMSUB",
+        "VFNMSUB",
+    ]:
         header.append(f"""
 template<typename T, Lmul lmul> RvvType<T, lmul>
 {camel_case(ternary_op)}(RvvType<T, lmul> vd, T rs1, RvvType<T, lmul> vs2, size_t vl) {{
-  return SameTypeBinaryOpTraits<T, lmul>::{ternary_op.lower()}_vx(vd, rs1, vs2, vl);
+  if constexpr (std::is_floating_point_v<T>) {{
+    return SameTypeBinaryOpTraits<T, lmul>::{ternary_op.lower()}_vf(vd, rs1, vs2, vl);
+  }} else {{
+    return SameTypeBinaryOpTraits<T, lmul>::{ternary_op.lower()}_vx(vd, rs1, vs2, vl);
+  }}
 }}""")
 
     # Comparison Wrappers

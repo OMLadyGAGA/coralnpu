@@ -39,14 +39,26 @@ class Fixture:
         self,
         path: str,
         symbols: list[str],
+        optional: bool = False,
+        optional_symbols: list[str] = None,
     ):
+        self.symbols = {}
         await self.core_mini_axi.reset()
         with open(path, "rb") as f:
             self.entry_point = await self.core_mini_axi.load_elf(f)
-            self.symbols = {
-                s: self.core_mini_axi.lookup_symbol(f, s)
-                for s in symbols
-            }
+            for symbol in symbols:
+                try:
+                    self.symbols[symbol] = self.core_mini_axi.lookup_symbol(f, symbol)
+                except Exception as e:
+                    if not optional:
+                        raise e
+            if optional_symbols:
+                for symbol in optional_symbols:
+                    try:
+                        self.symbols[symbol] = self.core_mini_axi.lookup_symbol(f, symbol)
+                    except Exception:
+                        pass
+
 
     async def write(self, symbol: str, data):
         await self.core_mini_axi.write(self.symbols[symbol], data)

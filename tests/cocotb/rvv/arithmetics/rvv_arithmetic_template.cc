@@ -30,12 +30,22 @@ void {MATH_OP}_{OP_SUFFIX}(const {SCALAR_TYPE}* in_buf_1,
                             const {SCALAR_TYPE}* in_buf_2,
                             {SCALAR_TYPE}* out_buf) {
   {VEC_TYPE} input_v1 = __riscv_vle{SEW}_v_{OP_SUFFIX}(in_buf_1, {NUM_OPERANDS});
+#if !defined(TEST_UNARY)
   {VEC_TYPE_V2} input_v2 = __riscv_vle{SEW}_v_{OP_SUFFIX_V2}(
       reinterpret_cast<const {SCALAR_TYPE_V2}*>(in_buf_2), {NUM_OPERANDS});
+#endif
+
+#ifdef TEST_RM
+  asm volatile("fsrm %0" : : "r"(TEST_RM));
+#endif
+
 #if defined(TEST_TERNARY)
   {VEC_TYPE} vd_orig = __riscv_vle{SEW}_v_{OP_SUFFIX}(out_buf, {NUM_OPERANDS});
   {VEC_TYPE} {MATH_OP}_result =
       __riscv_v{MATH_OP}_vv_{OP_SUFFIX}(vd_orig, input_v1, input_v2, {NUM_OPERANDS});
+#elif defined(TEST_UNARY)
+  {VEC_TYPE} {MATH_OP}_result = __riscv_v{MATH_OP}_v_{OP_SUFFIX}(
+      input_v1, {NUM_OPERANDS});
 #else
   {VEC_TYPE} {MATH_OP}_result = __riscv_v{MATH_OP}_vv_{OP_SUFFIX}(
       input_v1, input_v2 {EXTRA_ARGS}, {NUM_OPERANDS});

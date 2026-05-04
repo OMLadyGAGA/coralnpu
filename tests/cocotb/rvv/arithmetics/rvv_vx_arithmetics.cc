@@ -13,7 +13,7 @@ uint8_t vs1[MAX_VREG_GROUP_BYTES] __attribute__((section(".data")))
     __attribute__((aligned(16)));
 uint8_t vs2[MAX_VREG_GROUP_BYTES] __attribute__((section(".data")))
     __attribute__((aligned(16)));
-uint64_t xs2 __attribute__((section(".data")));
+uint64_t xs2 __attribute__((section(".data"))) __attribute__((aligned(16)));
 
 template <typename U>
 inline U get_xs2_as() {
@@ -207,6 +207,134 @@ inline void test_ext_op() {
 }
 #endif
 
+#if defined(TEST_FCOMP_VV)
+template<typename T, Lmul lmul>
+inline void test_fcomp_vv_op() {
+  const auto v2 = Vle<T, lmul>(reinterpret_cast<const T*>(vs2), vl);
+  const auto v1 = Vle<T, lmul>(reinterpret_cast<const T*>(vs1), vl);
+  const auto result = COMP_FUNCTION<T, lmul>(v2, v1, vl);
+  Vsm<T, lmul>(vd, result, vl);
+}
+#endif
+
+#if defined(TEST_FCOMP_VF)
+template<typename T, Lmul lmul>
+inline void test_fcomp_vf_op() {
+  const auto v2 = Vle<T, lmul>(reinterpret_cast<const T*>(vs2), vl);
+  const auto result = COMP_FUNCTION<T, lmul>(v2, get_xs2_as<T>(), vl);
+  Vsm<T, lmul>(vd, result, vl);
+}
+#endif
+
+#if defined(TEST_VFCLASS)
+template<typename T, Lmul lmul>
+inline void test_vfclass_op() {
+  const auto v2 = Vle<T, lmul>(reinterpret_cast<const T*>(vs2), vl);
+  const auto result = Vfclass<T, lmul>(v2, vl);
+  Vse<uint32_t, lmul>(reinterpret_cast<uint32_t*>(vd), result, vl);
+}
+#endif
+
+#if defined(TEST_VFMERGE)
+template<typename T, Lmul lmul>
+inline void test_vfmerge_op() {
+  const auto v2 = Vle<T, lmul>(reinterpret_cast<const T*>(vs2), vl);
+  const auto v0 = Vlm<T, lmul>(v0_buf, vl);
+  const auto result = Vfmerge<T, lmul>(v2, get_xs2_as<T>(), v0, vl);
+  Vse<T, lmul>(reinterpret_cast<T*>(vd), result, vl);
+}
+#endif
+
+#if defined(TEST_VFMV)
+template<typename T, Lmul lmul>
+inline void test_vfmv_op() {
+  const auto result = Vfmv<T, lmul>(get_xs2_as<T>(), vl);
+  Vse<T, lmul>(reinterpret_cast<T*>(vd), result, vl);
+}
+#endif
+
+#if defined(TEST_FSGNJ_VF)
+template<typename T, Lmul lmul>
+inline void test_fsgnj_vf_op() {
+  const auto vs2_v = Vle<T, lmul>(reinterpret_cast<const T*>(vs2), vl);
+  const auto result = Vfsgnj<T, lmul>(vs2_v, get_xs2_as<T>(), vl);
+  Vse<T, lmul>(reinterpret_cast<T*>(vd), result, vl);
+}
+#endif
+
+#if defined(TEST_FSGNJN_VF)
+template<typename T, Lmul lmul>
+inline void test_fsgnjn_vf_op() {
+  const auto vs2_v = Vle<T, lmul>(reinterpret_cast<const T*>(vs2), vl);
+  const auto result = Vfsgnjn<T, lmul>(vs2_v, get_xs2_as<T>(), vl);
+  Vse<T, lmul>(reinterpret_cast<T*>(vd), result, vl);
+}
+#endif
+
+#if defined(TEST_FSGNJX_VF)
+template<typename T, Lmul lmul>
+inline void test_fsgnjx_vf_op() {
+  const auto vs2_v = Vle<T, lmul>(reinterpret_cast<const T*>(vs2), vl);
+  const auto result = Vfsgnjx<T, lmul>(vs2_v, get_xs2_as<T>(), vl);
+  Vse<T, lmul>(reinterpret_cast<T*>(vd), result, vl);
+}
+#endif
+
+#if defined(TEST_VFCVT_F_X)
+template<typename T, Lmul lmul>
+inline void test_vfcvt_f_x_op() {
+  const auto vs2_int = Vle<int32_t, lmul>(reinterpret_cast<const int32_t*>(vs2), vl);
+  const auto result = VfcvtFX<T, lmul>(vs2_int, vl);
+  Vse<T, lmul>(reinterpret_cast<T*>(vd), result, vl);
+}
+#endif
+
+#if defined(TEST_VFCVT_F_XU)
+template<typename T, Lmul lmul>
+inline void test_vfcvt_f_xu_op() {
+  const auto vs2_uint = Vle<uint32_t, lmul>(reinterpret_cast<const uint32_t*>(vs2), vl);
+  const auto result = VfcvtFXu<T, lmul>(vs2_uint, vl);
+  Vse<T, lmul>(reinterpret_cast<T*>(vd), result, vl);
+}
+#endif
+
+#if defined(TEST_VFCVT_X_F)
+template<typename T, Lmul lmul>
+inline void test_vfcvt_x_f_op() {
+  const auto vs2_float = Vle<T, lmul>(reinterpret_cast<const T*>(vs2), vl);
+  const auto result = VfcvtXF<T, lmul>(vs2_float, vl);
+  Vse<int32_t, lmul>(reinterpret_cast<int32_t*>(vd), result, vl);
+}
+#endif
+
+#if defined(TEST_VFCVT_XU_F)
+template<typename T, Lmul lmul>
+inline void test_vfcvt_xu_f_op() {
+  const auto vs2_float = Vle<T, lmul>(reinterpret_cast<const T*>(vs2), vl);
+  const auto result = VfcvtXuF<T, lmul>(vs2_float, vl);
+  Vse<uint32_t, lmul>(reinterpret_cast<uint32_t*>(vd), result, vl);
+}
+#endif
+
+#if defined(TEST_VFCVT_RTZ_X_F)
+template<typename T, Lmul lmul>
+inline void test_vfcvt_rtz_x_f_op() {
+  const auto vs2_float = Vle<T, lmul>(reinterpret_cast<const T*>(vs2), vl);
+  const auto result = VfcvtRtzXF<T, lmul>(vs2_float, vl);
+  Vse<int32_t, lmul>(reinterpret_cast<int32_t*>(vd), result, vl);
+}
+#endif
+
+#if defined(TEST_VFCVT_RTZ_XU_F)
+template<typename T, Lmul lmul>
+inline void test_vfcvt_rtz_xu_f_op() {
+  const auto vs2_float = Vle<T, lmul>(reinterpret_cast<const T*>(vs2), vl);
+  const auto result = VfcvtRtzXuF<T, lmul>(vs2_float, vl);
+  Vse<uint32_t, lmul>(reinterpret_cast<uint32_t*>(vd), result, vl);
+}
+#endif
+
+
 template <typename T, Lmul lmul>
 inline void test_op() {
 #if defined(TEST_VI)
@@ -237,6 +365,34 @@ inline void test_op() {
   test_comp_vv_op<T, lmul>();
 #elif defined(TEST_COMP_VX)
   test_comp_vx_op<T, lmul>();
+#elif defined(TEST_FCOMP_VV)
+  test_fcomp_vv_op<T, lmul>();
+#elif defined(TEST_FCOMP_VF)
+  test_fcomp_vf_op<T, lmul>();
+#elif defined(TEST_VFCLASS)
+  test_vfclass_op<T, lmul>();
+#elif defined(TEST_VFMERGE)
+  test_vfmerge_op<T, lmul>();
+#elif defined(TEST_VFMV)
+  test_vfmv_op<T, lmul>();
+#elif defined(TEST_FSGNJ_VF)
+  test_fsgnj_vf_op<T, lmul>();
+#elif defined(TEST_FSGNJN_VF)
+  test_fsgnjn_vf_op<T, lmul>();
+#elif defined(TEST_FSGNJX_VF)
+  test_fsgnjx_vf_op<T, lmul>();
+#elif defined(TEST_VFCVT_F_X)
+  test_vfcvt_f_x_op<T, lmul>();
+#elif defined(TEST_VFCVT_F_XU)
+  test_vfcvt_f_xu_op<T, lmul>();
+#elif defined(TEST_VFCVT_X_F)
+  test_vfcvt_x_f_op<T, lmul>();
+#elif defined(TEST_VFCVT_XU_F)
+  test_vfcvt_xu_f_op<T, lmul>();
+#elif defined(TEST_VFCVT_RTZ_X_F)
+  test_vfcvt_rtz_x_f_op<T, lmul>();
+#elif defined(TEST_VFCVT_RTZ_XU_F)
+  test_vfcvt_rtz_xu_f_op<T, lmul>();
 #else
 #if defined(TEST_WIDEN_VX)
   if constexpr (!std::is_same_v<T, int32_t> && !std::is_same_v<T, uint32_t> &&
@@ -314,6 +470,9 @@ void (*impl)() __attribute__((section(".data"))) = &test_i8_m1;
 
 
 int main() {
+#ifdef TEST_RM
+  asm volatile("fsrm %0" : : "r"(TEST_RM));
+#endif
   impl();
   return 0;
 }

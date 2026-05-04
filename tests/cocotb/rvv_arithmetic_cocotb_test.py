@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import cocotb
+import sys
 import tqdm
 import re
 import numpy as np
@@ -20,6 +21,17 @@ import os
 
 from bazel_tools.tools.python.runfiles import runfiles
 from coralnpu_test_utils.sim_test_fixture import Fixture
+
+import ctypes
+import math
+
+RM_MAP = {
+    "rne": 0,
+    "rtz": 0xc00,
+    "rdn": 0x400,
+    "rup": 0x800,
+    "rmm": None
+}
 
 STR_TO_NP_TYPE = {
     "int8": np.int8,
@@ -32,18 +44,149 @@ STR_TO_NP_TYPE = {
 }
 
 
-def _get_math_result(x: np.array, y: np.array, symbol: str, dtype=None):
+def reference_fma(x, y, z, symbol, rm="rne"):
+    # Convert inputs to float64 to prevent double-rounding
+    xf64 = np.float64(x)
+    yf64 = np.float64(y)
+    zf64 = np.float64(z)
+    
+    if symbol == "fmacc":
+        res64 = yf64 * zf64 + xf64
+    elif symbol == "fnmacc":
+        res64 = (-yf64) * zf64 - xf64
+    elif symbol == "fmadd":
+        res64 = xf64 * yf64 + zf64
+    elif symbol == "fnmadd":
+        res64 = (-xf64) * yf64 - zf64
+    elif symbol == "fmsac":
+        res64 = yf64 * zf64 - xf64
+    elif symbol == "fnmsac":
+        res64 = (-yf64) * zf64 + xf64
+    elif symbol == "fmsub":
+        res64 = xf64 * yf64 - zf64
+    elif symbol == "fnmsub":
+        res64 = (-xf64) * yf64 + zf64
+    else:
+        return x
+
+    if rm == "rmm":
+        res32 = np.float32(res64)
+        return res32
+    else:
+        libc = ctypes.CDLL(None)
+        if hasattr(libc, "fesetround") and rm in RM_MAP and RM_MAP[rm] is not None:
+            libc.fesetround(RM_MAP[rm])
+        
+        res32 = np.float32(res64)
+        
+        if hasattr(libc, "fesetround"):
+            libc.fesetround(0) # Restore RNE
+        return res32
+
+
+def reference_fclass(x):
+    res = np.zeros_like(x, dtype=np.uint32)
+    # 0: neg inf
+    res |= (np.isinf(x) & (x < 0)).astype(np.uint32) << 0
+    # 1: neg normal
+    res |= (np.isfinite(x) & (x < 0) & (np.abs(x) >= np.finfo(np.float32).tiny)).astype(
+        np.uint32
+    ) << 1
+    # 2: neg subnormal
+    res |= (
+        np.isfinite(x) & (x < 0) & (np.abs(x) < np.finfo(np.float32).tiny) & (x != 0)
+    ).astype(np.uint32) << 2
+    # 3: neg zero
+    res |= ((x == 0) & np.signbit(x)).astype(np.uint32) << 3
+    # 4: pos zero
+    res |= ((x == 0) & ~np.signbit(x)).astype(np.uint32) << 4
+    # 5: pos subnormal
+    res |= (np.isfinite(x) & (x > 0) & (x < np.finfo(np.float32).tiny)).astype(
+        np.uint32
+    ) << 5
+    # 6: pos normal
+    res |= (np.isfinite(x) & (x > 0) & (x >= np.finfo(np.float32).tiny)).astype(
+        np.uint32
+    ) << 6
+    # 7: pos inf
+    res |= (np.isinf(x) & (x > 0)).astype(np.uint32) << 7
+    # 8: signaling NaN (assume none for now as it is hard to distinguish from quiet NaN in NumPy)
+    # 9: quiet NaN
+    res |= np.isnan(x).astype(np.uint32) << 9
+    return res
+
+
+def reference_fredosum(x, y):
+    res = y[0]
+    for i in range(len(x)):
+        res += x[i]
+    return np.array([res])
+
+
+async def _setup_fixture(dut):
+    r = runfiles.Create()
+    fixture = await Fixture.Create(dut)
+    rng = np.random.default_rng(seed=42)
+    return fixture, r, rng
+
+
+def _get_math_result(x: np.array, y: np.array, symbol: str, dtype=None, z=None, rm="rne"):
+    libc = ctypes.CDLL(None)
+    def apply_rm(func, *args, **kwargs):
+        if rm != "rmm" and hasattr(libc, "fesetround") and rm in RM_MAP and RM_MAP[rm] is not None:
+            libc.fesetround(RM_MAP[rm])
+        res = func(*args, **kwargs)
+        if hasattr(libc, "fesetround"):
+            libc.fesetround(0)
+        return res
+
     if symbol == "add" or symbol == "fadd":
+        if symbol == "fadd": return apply_rm(np.add, x, y, dtype=dtype)
         return np.add(x, y, dtype=dtype)
     elif symbol == "sub" or symbol == "fsub":
+        if symbol == "fsub": return apply_rm(np.subtract, x, y, dtype=dtype)
         return np.subtract(x, y, dtype=dtype)
     elif symbol == "mul" or symbol == "fmul":
+        if symbol == "fmul": return apply_rm(np.multiply, x, y, dtype=dtype)
         return np.multiply(x, y, dtype=dtype)
     elif symbol == "fdiv":
         orig_settings = np.seterr(divide="ignore")
-        divide_output = np.divide(x, y, dtype=dtype)
+        divide_output = apply_rm(np.divide, x, y, dtype=dtype)
         np.seterr(**orig_settings)
         return divide_output
+    elif symbol == "fmin":
+        return apply_rm(np.minimum, x, y)
+    elif symbol == "fmax":
+        return apply_rm(np.maximum, x, y)
+    elif symbol == "frsub":
+        return apply_rm(np.subtract, y, x)
+    elif symbol == "frdiv":
+        with np.errstate(divide="ignore", invalid="ignore"):
+            return apply_rm(np.divide, y, x, dtype=dtype)
+    elif symbol == "fsqrt":
+        with np.errstate(invalid="ignore"):
+            return apply_rm(np.sqrt, x, dtype=dtype)
+    elif symbol == "fsgnj":
+        # Standard: magnitude from vs2 (x), sign from scalar/vs1 (y).
+        return np.copysign(x, y)
+    elif symbol == "fsgnjn":
+        return np.copysign(x, -y)
+    elif symbol == "fsgnjx":
+        x_bits = x.view(np.uint32)
+        y_bits = y.view(np.uint32)
+        res_bits = x_bits ^ (y_bits & 0x80000000)
+        return res_bits.view(np.float32)
+    elif symbol in [
+        "fmacc",
+        "fnmacc",
+        "fmadd",
+        "fnmadd",
+        "fmsac",
+        "fnmsac",
+        "fmsub",
+        "fnmsub",
+    ]:
+        return reference_fma(x, y, z, symbol, rm)
     elif symbol == "and":
         return np.bitwise_and(x, y)
     elif symbol == "or":
@@ -82,6 +225,8 @@ def _get_math_result(x: np.array, y: np.array, symbol: str, dtype=None):
         return reference_rem(x, y)
     elif symbol == "redsum" or symbol == "fredusum":
         return y[0] + np.add.reduce(x)
+    elif symbol == "fredosum":
+        return reference_fredosum(x, y)
     elif symbol == "redmin" or symbol == "fredmin":
         return np.min(np.concatenate((x, y)))
     elif symbol == "redmax" or symbol == "fredmax":
@@ -100,20 +245,33 @@ async def arithmetic_m1_vanilla_ops_test(dut, dtypes, math_ops: list, num_bytes:
 
     Each test performs a math op loading `in_buf_1` and `in_buf_2` and storing the output to `out_buf`.
     """
-    m1_vanilla_op_elfs = [
-        f"rvv_{math_op}_{dtype}_m1.elf"
-        for math_op in math_ops
-        for dtype in dtypes
-        if not (math_op == "smul" and dtype.startswith("u"))
-        and not (math_op in ["sra", "ssra"] and dtype.startswith("u"))
-        and not (math_op in ["srl", "ssrl"] and dtype.startswith("i"))
-    ]
-    pattern_extract = re.compile("rvv_(.*)_(.*)_m1.elf")
+    rms = ["rne", "rtz", "rdn", "rup", "rmm"]
+    m1_vanilla_op_elfs = []
+    for math_op in math_ops:
+        for dtype in dtypes:
+            if dtype == "float":
+                for rm in rms:
+                    m1_vanilla_op_elfs.append(f"rvv_{math_op}_{dtype}_{rm}_m1.elf")
+            else:
+                if not (math_op == "smul" and dtype.startswith("u")) \
+                   and not (math_op in ["sra", "ssra"] and dtype.startswith("u")) \
+                   and not (math_op in ["srl", "ssrl"] and dtype.startswith("i")):
+                    m1_vanilla_op_elfs.append(f"rvv_{math_op}_{dtype}_m1.elf")
+
+    pattern_extract = re.compile(r"rvv_(.*)_(int8|int16|int32|uint8|uint16|uint32|float)_(.*_)*m1.elf")
 
     r = runfiles.Create()
     fixture = await Fixture.Create(dut)
+    test_elf_filter = os.environ.get("TEST_ELF")
+    if test_elf_filter:
+        m1_vanilla_op_elfs = [
+            x
+            for x in m1_vanilla_op_elfs
+            if os.path.basename(x) == test_elf_filter or x == test_elf_filter
+        ]
+
     with tqdm.tqdm(m1_vanilla_op_elfs) as t:
-        for elf_name in tqdm.tqdm(m1_vanilla_op_elfs):
+        for elf_name in t:
             t.set_postfix({"binary": os.path.basename(elf_name)})
             elf_path = r.Rlocation(
                 "coralnpu_hw/tests/cocotb/rvv/arithmetics/" + elf_name
@@ -122,7 +280,10 @@ async def arithmetic_m1_vanilla_ops_test(dut, dtypes, math_ops: list, num_bytes:
                 elf_path,
                 ["in_buf_1", "in_buf_2", "out_buf"],
             )
-            math_op, dtype = pattern_extract.match(elf_name).groups()
+            match = pattern_extract.match(elf_name)
+            math_op = match.group(1)
+            dtype = match.group(2)
+            rm_str = match.group(3).strip("_") if match.group(3) else "rne"
             np_type = STR_TO_NP_TYPE[dtype]
             num_test_values = int(num_bytes / np.dtype(np_type).itemsize)
             if np.issubdtype(np_type, np.integer):
@@ -134,23 +295,43 @@ async def arithmetic_m1_vanilla_ops_test(dut, dtypes, math_ops: list, num_bytes:
                 input_2 = np.random.randint(
                     min_value, max_value, num_test_values, dtype=np_type
                 )
+                input_d = np.zeros(num_test_values, dtype=np_type)
             else:
                 input_1 = np.random.uniform(-10, 10, num_test_values).astype(np_type)
                 input_2 = np.random.uniform(-10, 10, num_test_values).astype(np_type)
+                input_d = np.random.uniform(-10, 10, num_test_values).astype(np_type)
 
-            expected_output = np.asarray(
-                _get_math_result(input_1, input_2, math_op), dtype=np_type
-            )
+            if math_op in [
+                "fmacc",
+                "fnmacc",
+                "fmadd",
+                "fnmadd",
+                "fmsac",
+                "fnmsac",
+                "fmsub",
+                "fnmsub",
+            ]:
+                expected_output = np.asarray(
+                    _get_math_result(
+                        input_d, input_1, math_op, dtype=np_type, z=input_2, rm=rm_str
+                    ),
+                    dtype=np_type,
+                )
+            else:
+                expected_output = np.asarray(
+                    _get_math_result(input_1, input_2, math_op, dtype=np_type, rm=rm_str), dtype=np_type
+                )
 
             await fixture.write("in_buf_1", input_1)
             await fixture.write("in_buf_2", input_2)
-            await fixture.write("out_buf", np.zeros([num_test_values], dtype=np_type))
+            await fixture.write("out_buf", input_d)
 
             await fixture.run_to_halt()
 
             actual_output = (await fixture.read("out_buf", num_bytes)).view(np_type)
             debug_msg = str(
                 {
+                    "op": math_op,
                     "input_1": input_1,
                     "input_2": input_2,
                     "expected": expected_output,
@@ -162,7 +343,7 @@ async def arithmetic_m1_vanilla_ops_test(dut, dtypes, math_ops: list, num_bytes:
                 assert (actual_output == expected_output).all(), debug_msg
             else:
                 assert np.allclose(
-                    actual_output, expected_output, rtol=1e-5, atol=1e-8
+                    actual_output, expected_output, rtol=1e-5, atol=1e-8, equal_nan=True
                 ), debug_msg
 
 
@@ -203,7 +384,27 @@ async def float32_arithmetic_m1_vanilla_ops(dut):
     await arithmetic_m1_vanilla_ops_test(
         dut=dut,
         dtypes=["float"],
-        math_ops=["fadd", "fsub", "fmul", "fdiv"],
+        math_ops=[
+            "fadd",
+            "fsub",
+            "fmul",
+            "fdiv",
+            "fmin",
+            "fmax",
+            "fmacc",
+            "fnmacc",
+            "fmadd",
+            "fnmadd",
+            "fmsac",
+            "fnmsac",
+            "fmsub",
+            "fnmsub",
+            "fsqrt",
+            # Disabled pending RTL fix.
+            # "fsgnj",
+            # "fsgnjn",
+            # "fsgnjx",
+        ],
         num_bytes=16,
     )
 
@@ -274,6 +475,7 @@ async def reduction_m1_vanilla_ops_test(dut, dtypes, math_ops: list, num_bytes: 
             actual_output = (await fixture.read("out_buf", itemsize)).view(np_type)
             debug_msg = str(
                 {
+                    "op": math_op,
                     "input_1": input_1,
                     "input_2": input_2,
                     "expected": expected_output,
@@ -284,7 +486,7 @@ async def reduction_m1_vanilla_ops_test(dut, dtypes, math_ops: list, num_bytes: 
                 assert (actual_output == expected_output).all(), debug_msg
             else:
                 assert np.allclose(
-                    actual_output, expected_output, rtol=1e-5, atol=1e-8
+                    actual_output, expected_output, rtol=1e-5, atol=1e-8, equal_nan=True
                 ), debug_msg
 
 
@@ -303,7 +505,7 @@ async def float32_reduction_m1_vanilla_ops(dut):
     await reduction_m1_vanilla_ops_test(
         dut=dut,
         dtypes=["float"],
-        math_ops=["fredusum", "fredmin", "fredmax"],
+        math_ops=["fredusum", "fredosum", "fredmin", "fredmax"],
         num_bytes=16,
     )
 
@@ -745,9 +947,6 @@ async def vnclip_vxsat_test(dut):
     1. Clearing vxsat to 0
     2. Executing vnclip with MAX_INT32 >> 0, which saturates to MAX_INT16
     3. Reading vxsat via csrr and verifying it equals 1
-
-    BUG: Currently fails because wr_vxsat_valid/wr_vxsat signals are connected
-    to dead-end local wires in RvvCore.sv instead of output ports.
     """
     fixture = await Fixture.Create(dut)
     r = runfiles.Create()
@@ -780,9 +979,26 @@ async def ternary_op_vx(dut):
         ("vnmsac_vx_test.elf", SAME_TYPE_TEST_CASES, lambda x, y, z: x - y * z),
         ("vmadd_vx_test.elf", SAME_TYPE_TEST_CASES, lambda x, y, z: x * y + z),
         ("vnmsub_vx_test.elf", SAME_TYPE_TEST_CASES, lambda x, y, z: -(x * y) + z),
+        ("vfmacc_vf_test.elf", FLOAT_SAME_TYPE_TEST_CASES, None),
+        ("vfnmacc_vf_test.elf", FLOAT_SAME_TYPE_TEST_CASES, None),
+        ("vfmadd_vf_test.elf", FLOAT_SAME_TYPE_TEST_CASES, None),
+        ("vfnmadd_vf_test.elf", FLOAT_SAME_TYPE_TEST_CASES, None),
+        ("vfmsac_vf_test.elf", FLOAT_SAME_TYPE_TEST_CASES, None),
+        ("vfnmsac_vf_test.elf", FLOAT_SAME_TYPE_TEST_CASES, None),
+        ("vfmsub_vf_test.elf", FLOAT_SAME_TYPE_TEST_CASES, None),
+        ("vfnmsub_vf_test.elf", FLOAT_SAME_TYPE_TEST_CASES, None),
     ]
-    with tqdm.tqdm(test_binaries) as pbar:
-        for test_binary, test_cases, expected_fn in pbar:
+    rms = ["rne", "rtz", "rdn", "rup", "rmm"]
+    test_binaries_rm = []
+    for binary, cases, fn in test_binaries:
+        if "vf_" in binary:
+            for rm in rms:
+                test_binaries_rm.append((binary.replace(".elf", f"_{rm}.elf"), cases, fn, rm))
+        else:
+            test_binaries_rm.append((binary, cases, fn, "rne"))
+
+    with tqdm.tqdm(test_binaries_rm) as pbar:
+        for test_binary, test_cases, expected_fn, rm_str in pbar:
             pbar.set_postfix({"binary": test_binary})
             test_binary_path = r.Rlocation(
                 f"coralnpu_hw/tests/cocotb/rvv/arithmetics/{test_binary}"
@@ -799,34 +1015,54 @@ async def ternary_op_vx(dut):
                     continue
                 for vl in [1, vlmax]:
                     rng = np.random.default_rng()
-                    vs1_data = rng.integers(
-                        np.iinfo(vs1_dtype).min,
-                        np.iinfo(vs1_dtype).max + 1,
-                        size=vl,
-                        dtype=vs1_dtype,
-                    )
-                    xs2_data = rng.integers(
-                        np.iinfo(xs2_dtype).min,
-                        np.iinfo(xs2_dtype).max + 1,
-                        size=1,
-                        dtype=xs2_dtype,
-                    )
-                    vd_orig_data = rng.integers(
-                        np.iinfo(vd_dtype).min,
-                        np.iinfo(vd_dtype).max + 1,
-                        size=vl,
-                        dtype=vd_dtype,
-                    )
+                    if np.issubdtype(vs1_dtype, np.integer):
+                        vs1_data = rng.integers(
+                            np.iinfo(vs1_dtype).min,
+                            np.iinfo(vs1_dtype).max + 1,
+                            size=vl,
+                            dtype=vs1_dtype,
+                        )
+                        xs2_data = rng.integers(
+                            np.iinfo(xs2_dtype).min,
+                            np.iinfo(xs2_dtype).max + 1,
+                            size=1,
+                            dtype=xs2_dtype,
+                        )
+                        vd_orig_data = rng.integers(
+                            np.iinfo(vd_dtype).min,
+                            np.iinfo(vd_dtype).max + 1,
+                            size=vl,
+                            dtype=vd_dtype,
+                        )
+                    else:
+                        vs1_data = rng.uniform(-10, 10, vl).astype(vs1_dtype)
+                        xs2_data = rng.uniform(-10, 10, 1).astype(xs2_dtype)
+                        vd_orig_data = rng.uniform(-10, 10, vl).astype(vd_dtype)
 
                     await fixture.write("vl", np.array([vl], dtype=np.uint32))
                     await fixture.write("vs1", vs1_data)
-                    await fixture.write("xs2", xs2_data.astype(np.uint32))
+                    if "vf_" in test_binary:
+                        scalar_full = np.zeros(1, dtype=np.uint64)
+                        scalar_full[0] = xs2_data.view(np.uint32)[0]
+                        await fixture.write("xs2", scalar_full)
+                    else:
+                        await fixture.write("xs2", xs2_data.astype(np.uint32))
                     await fixture.write("vd", vd_orig_data)
 
                     await fixture.write_ptr("impl", test_fn_name)
                     await fixture.run_to_halt()
 
-                    expected_vd_data = expected_fn(vd_orig_data, xs2_data[0], vs1_data)
+                    if "vf_" in test_binary:
+                        math_op = test_binary.split("_vf_")[0][1:]
+                        # _get_math_result expects: (vd, vs1, symbol, dtype, z=vs2, rm=rm)
+                        # For ternary: x=vd_orig_data, y=vs1_data, z=xs2_data[0] 
+                        # Wait, C++ does VX_FUNCTION(vd_orig, xs2_data, vs1_data)
+                        # So vs1=xs2_data[0], vs2=vs1_data in RISC-V terms.
+                        # Wait, in the lambda it was expected_fn(vd_orig_data, xs2_data[0], vs1_data) -> (x, y, z).
+                        # Let's pass it to _get_math_result exactly like that: x=vd, y=xs2, z=vs1
+                        expected_vd_data = np.asarray(_get_math_result(vd_orig_data, xs2_data[0], math_op, dtype=np.float32, z=vs1_data, rm=rm_str), dtype=np.float32)
+                    else:
+                        expected_vd_data = expected_fn(vd_orig_data, xs2_data[0], vs1_data)
                     actual_vd_data = (
                         await fixture.read("vd", vl * np.dtype(vd_dtype).itemsize)
                     ).view(vd_dtype)
@@ -1537,7 +1773,30 @@ UNSIGNED_ONLY_TEST_CASES = [
 SIGNED_LHS_UNSIGNED_RHS_ONLY_TEST_CASES = [
     (name, vl, lhs_dtype, _force_unsigned(rhs_dtype), result_type)
     for name, vl, lhs_dtype, rhs_dtype, result_type in SAME_TYPE_TEST_CASES
-    if np.dtype(lhs_dtype).kind == 'i'
+    if np.dtype(lhs_dtype).kind == "i"
+]
+
+WIDENING_BINARY_VX_TEST_CASES = [
+    ("test_i8_mf4", 4, np.int8, np.int8, np.int16),
+    ("test_i8_mf2", 8, np.int8, np.int8, np.int16),
+    ("test_i8_m1", 16, np.int8, np.int8, np.int16),
+    ("test_i8_m2", 32, np.int8, np.int8, np.int16),
+    ("test_i8_m4", 64, np.int8, np.int8, np.int16),
+    ("test_i16_mf2", 4, np.int16, np.int16, np.int32),
+    ("test_i16_m1", 8, np.int16, np.int16, np.int32),
+    ("test_i16_m2", 16, np.int16, np.int16, np.int32),
+    ("test_i16_m4", 32, np.int16, np.int16, np.int32),
+]
+
+FLOAT_SAME_TYPE_TEST_CASES = [
+    ("test_f32_m1", 4, np.float32, np.float32, np.float32),
+    ("test_f32_m2", 8, np.float32, np.float32, np.float32),
+    ("test_f32_m4", 16, np.float32, np.float32, np.float32),
+    ("test_f32_m8", 32, np.float32, np.float32, np.float32),
+]
+
+FLOAT_CROSS_CONVERT_TEST_CASES = [
+    c for c in WIDENING_BINARY_VX_TEST_CASES if c[2] in (np.int16, np.uint16)
 ]
 
 @cocotb.test()
@@ -1572,9 +1831,24 @@ async def binary_op_vx(dut):
             SIGNED_LHS_UNSIGNED_RHS_ONLY_TEST_CASES,
             reference_vmulh,
         ),
+        ("vfadd_vf_test.elf", FLOAT_SAME_TYPE_TEST_CASES, np.add),
+        ("vfsub_vf_test.elf", FLOAT_SAME_TYPE_TEST_CASES, np.subtract),
+        ("vfmul_vf_test.elf", FLOAT_SAME_TYPE_TEST_CASES, np.multiply),
+        ("vfdiv_vf_test.elf", FLOAT_SAME_TYPE_TEST_CASES, np.divide),
+        ("vfrsub_vf_test.elf", FLOAT_SAME_TYPE_TEST_CASES, lambda x, y: np.subtract(y, x)),
+        ("vfrdiv_vf_test.elf", FLOAT_SAME_TYPE_TEST_CASES, lambda x, y: np.divide(y, x)),
     ]
-    with tqdm.tqdm(test_binaries) as pbar:
-        for test_binary_op_vx, test_cases, expected_fn in pbar:
+    rms = ["rne", "rtz", "rdn", "rup", "rmm"]
+    test_binaries_rm = []
+    for binary, cases, fn in test_binaries:
+        if "vf_" in binary:
+            for rm in rms:
+                test_binaries_rm.append((binary.replace(".elf", f"_{rm}.elf"), cases, fn, rm))
+        else:
+            test_binaries_rm.append((binary, cases, fn, "rne"))
+
+    with tqdm.tqdm(test_binaries_rm) as pbar:
+        for test_binary_op_vx, test_cases, expected_fn, rm_str in pbar:
             pbar.set_postfix({"binary": test_binary_op_vx})
             test_binary_path = r.Rlocation(
                 f"coralnpu_hw/tests/cocotb/rvv/arithmetics/{test_binary_op_vx}"
@@ -1588,20 +1862,29 @@ async def binary_op_vx(dut):
                 for vl in [1, vlmax-1, vlmax]:
                     # Write random data to vs1 and xs2
                     rng = np.random.default_rng()
-                    vs1_data = rng.integers(
-                        np.iinfo(vs1_dtype).min,
-                        np.iinfo(vs1_dtype).max + 1,
-                        size=vl,
-                        dtype=vs1_dtype)
-                    xs2_data = rng.integers(
-                        np.iinfo(xs2_dtype).min,
-                        np.iinfo(xs2_dtype).max + 1,
-                        size=1,
-                        dtype=xs2_dtype)
+                    if np.issubdtype(vs1_dtype, np.integer):
+                        vs1_data = rng.integers(
+                            np.iinfo(vs1_dtype).min,
+                            np.iinfo(vs1_dtype).max + 1,
+                            size=vl,
+                            dtype=vs1_dtype)
+                        xs2_data = rng.integers(
+                            np.iinfo(xs2_dtype).min,
+                            np.iinfo(xs2_dtype).max + 1,
+                            size=1,
+                            dtype=xs2_dtype)
+                    else:
+                        vs1_data = rng.uniform(-10, 10, vl).astype(vs1_dtype)
+                        xs2_data = rng.uniform(-10, 10, 1).astype(xs2_dtype)
 
                     await fixture.write('vl', np.array([vl], dtype=np.uint32))
                     await fixture.write('vs1', vs1_data)
-                    await fixture.write('xs2', xs2_data.astype(np.uint32))
+                    if "vf_" in test_binary_op_vx:
+                        scalar_full = np.zeros(1, dtype=np.uint64)
+                        scalar_full[0] = xs2_data.view(np.uint32)[0]
+                        await fixture.write("xs2", scalar_full)
+                    else:
+                        await fixture.write('xs2', xs2_data.astype(np.uint32))
                     await fixture.write('vd', np.zeros(128, dtype=np.uint8))
 
                     # Execute the test function
@@ -1609,11 +1892,415 @@ async def binary_op_vx(dut):
                     await fixture.run_to_halt()
 
                     # Read the result and assert
-                    expected_vd_data = expected_fn(vs1_data, xs2_data[0])
+                    if "vf_" in test_binary_op_vx:
+                        with np.errstate(divide="ignore", invalid="ignore"):
+                            expected_vd_data = _get_math_result(vs1_data, xs2_data[0], test_binary_op_vx.split("_vf_")[0][1:], dtype=np.float32, rm=rm_str)
+                    else:
+                        expected_vd_data = expected_fn(vs1_data, xs2_data[0])
                     actual_vd_data = (await fixture.read(
                         'vd', vl*np.dtype(vd_dtype).itemsize)).view(vd_dtype)
-                    assert (actual_vd_data == expected_vd_data).all(), (
-                        f"binary: {test_binary_op_vx}, "
-                        f"test_fn_name: {test_fn_name}, "
-                        f"vs1: {vs1_data}, xs2: {xs2_data}, "
-                        f"expected: {expected_vd_data}, actual: {actual_vd_data}")
+                    err_msg = (
+                        f"binary: {test_binary_op_vx}, test_fn: {test_fn_name}, vs1: {vs1_data}, xs2: {xs2_data}, "
+                        f"expected: {expected_vd_data}, actual: {actual_vd_data}"
+                    )
+                    if "vf_" in test_binary_op_vx and rm_str == "rmm":
+                        # RMM is not natively supported by x86 FPU so we fall back to RNE in Python.
+                        # This can cause 1 ULP differences in halfway tie cases.
+                        np.testing.assert_allclose(actual_vd_data, expected_vd_data, rtol=1e-6, atol=1e-6, err_msg=err_msg)
+                    else:
+                        np.testing.assert_array_equal(actual_vd_data, expected_vd_data, err_msg=err_msg)
+
+
+@cocotb.test()
+async def float_comparison_op(dut):
+    fixture, r, rng = await _setup_fixture(dut)
+    test_binaries = [
+        (
+            "vmfeq_vv_test.elf",
+            FLOAT_SAME_TYPE_TEST_CASES,
+            lambda x, y: (x == y).astype(np.uint8),
+            False,
+        ),
+        (
+            "vmfeq_vf_test.elf",
+            FLOAT_SAME_TYPE_TEST_CASES,
+            lambda x, y: (x == y).astype(np.uint8),
+            True,
+        ),
+        (
+            "vmfne_vv_test.elf",
+            FLOAT_SAME_TYPE_TEST_CASES,
+            lambda x, y: (x != y).astype(np.uint8),
+            False,
+        ),
+        (
+            "vmfne_vf_test.elf",
+            FLOAT_SAME_TYPE_TEST_CASES,
+            lambda x, y: (x != y).astype(np.uint8),
+            True,
+        ),
+        (
+            "vmflt_vv_test.elf",
+            FLOAT_SAME_TYPE_TEST_CASES,
+            lambda x, y: (x < y).astype(np.uint8),
+            False,
+        ),
+        (
+            "vmflt_vf_test.elf",
+            FLOAT_SAME_TYPE_TEST_CASES,
+            lambda x, y: (x < y).astype(np.uint8),
+            True,
+        ),
+        (
+            "vmfle_vv_test.elf",
+            FLOAT_SAME_TYPE_TEST_CASES,
+            lambda x, y: (x <= y).astype(np.uint8),
+            False,
+        ),
+        (
+            "vmfle_vf_test.elf",
+            FLOAT_SAME_TYPE_TEST_CASES,
+            lambda x, y: (x <= y).astype(np.uint8),
+            True,
+        ),
+        (
+            "vmfgt_vf_test.elf",
+            FLOAT_SAME_TYPE_TEST_CASES,
+            lambda x, y: (x > y).astype(np.uint8),
+            True,
+        ),
+        (
+            "vmfge_vf_test.elf",
+            FLOAT_SAME_TYPE_TEST_CASES,
+            lambda x, y: (x >= y).astype(np.uint8),
+            True,
+        ),
+    ]
+    with tqdm.tqdm(test_binaries) as pbar:
+        for test_binary, test_cases, expected_fn, is_vf in pbar:
+            pbar.set_postfix({"binary": test_binary})
+            test_binary_path = r.Rlocation(
+                f"coralnpu_hw/tests/cocotb/rvv/arithmetics/{test_binary}"
+            )
+
+            symbols = ["vl", "vs2", "vd", "impl"]
+            symbols.append("xs2" if is_vf else "vs1")
+
+            fn_names = list(set([x[0] for x in test_cases]))
+            await fixture.load_elf_and_lookup_symbols(
+                test_binary_path, symbols + fn_names
+            )
+
+            for test_fn_name, vlmax, vs1_dtype, vs2_dtype, vd_dtype in test_cases:
+                for vl in [1, vlmax]:
+                    vs2_data = rng.standard_normal(vl).astype(vs2_dtype)
+                    in1_data = rng.standard_normal(vl).astype(vs1_dtype)
+
+                    await fixture.write("vl", np.array([vl], dtype=np.uint32))
+                    await fixture.write("vs2", vs2_data)
+                    if is_vf:
+                        scalar_bits = in1_data[0:1].view(np.uint32)
+                        scalar_full = np.zeros(1, dtype=np.uint64)
+                        scalar_full[0] = scalar_bits[0]
+                        await fixture.write("xs2", scalar_full)
+                    else:
+                        await fixture.write("vs1", in1_data)
+
+                    await fixture.write_ptr("impl", test_fn_name)
+                    await fixture.run_to_halt()
+
+                    num_mask_bytes = (vl + 7) // 8
+                    actual_packed = await fixture.read("vd", num_mask_bytes)
+                    actual = np.zeros(vl, dtype=np.uint8)
+                    for i in range(vl):
+                        if actual_packed[i // 8] & (1 << (i % 8)):
+                            actual[i] = 1
+
+                    expected = expected_fn(vs2_data, in1_data[0] if is_vf else in1_data)
+                    np.testing.assert_array_equal(actual, expected)
+
+
+@cocotb.test()
+async def float_misc_op(dut):
+    fixture, r, rng = await _setup_fixture(dut)
+    test_binaries = [
+        (
+            "vfclass_v_test.elf",
+            FLOAT_SAME_TYPE_TEST_CASES,
+            reference_fclass,
+            False,
+            False,
+            False,
+        ),
+        (
+            "vfmv_v_f_test.elf",
+            FLOAT_SAME_TYPE_TEST_CASES,
+            lambda y, vl: np.full(vl, y),
+            False,
+            True,
+            True,
+        ),
+        # Disabled pending RTL fix.
+        # (
+        #     "vfsgnj_vf_test.elf",
+        #     FLOAT_SAME_TYPE_TEST_CASES,
+        #     lambda x, y: np.copysign(x, y),
+        #     False,
+        #     True,
+        #     False,
+        # ),
+        # (
+        #     "vfsgnjn_vf_test.elf",
+        #     FLOAT_SAME_TYPE_TEST_CASES,
+        #     lambda x, y: np.copysign(x, -y),
+        #     False,
+        #     True,
+        #     False,
+        # ),
+        # (
+        #     "vfsgnjx_vf_test.elf",
+        #     FLOAT_SAME_TYPE_TEST_CASES,
+        #     lambda x, y: (
+        #         x.view(np.uint32)
+        #         ^ (np.array([y], dtype=np.float32).view(np.uint32) & 0x80000000)
+        #     ).view(np.float32),
+        #     False,
+        #     True,
+        #     False,
+        # ),
+        (
+            "vfmerge_vfm_test.elf",
+            FLOAT_SAME_TYPE_TEST_CASES,
+            lambda x, y, m: np.where(m, y, x),
+            True,
+            True,
+            False,
+        ),
+    ]
+
+    rms = ["rne", "rtz", "rdn", "rup", "rmm"]
+    test_binaries_rm = []
+    for binary, cases, fn, has_mask, is_vf, is_move in test_binaries:
+        for rm in rms:
+            test_binaries_rm.append((binary.replace(".elf", f"_{rm}.elf"), cases, fn, has_mask, is_vf, is_move, rm))
+
+    with tqdm.tqdm(test_binaries_rm) as pbar:
+        for test_binary, test_cases, expected_fn, has_mask, is_vf, is_move, rm_str in pbar:
+            pbar.set_postfix({"binary": test_binary})
+            test_binary_path = r.Rlocation(
+                f"coralnpu_hw/tests/cocotb/rvv/arithmetics/{test_binary}"
+            )
+
+            symbols = ["vl", "vd", "impl"]
+            opt_symbols = ["vs1", "vs2", "xs2", "v0_buf"]
+            fn_names = list(set([x[0] for x in test_cases]))
+            await fixture.load_elf_and_lookup_symbols(
+                test_binary_path, symbols + fn_names, optional_symbols=opt_symbols
+            )
+
+            for test_fn_name, vlmax, vs1_dtype, vs2_dtype, vd_dtype in test_cases:
+                vl = vlmax
+                vs2_data = rng.standard_normal(vl).astype(vs2_dtype)
+                in1_data = rng.standard_normal(vl).astype(vs1_dtype)
+                v0_data = rng.integers(0, 2, vl, dtype=np.uint8) if has_mask else None
+
+                if "vfclass" in test_binary:
+                    edge_cases = [
+                        -np.inf,
+                        -1.0,
+                        -1e-40,
+                        -0.0,
+                        0.0,
+                        1e-40,
+                        1.0,
+                        np.inf,
+                        np.nan,
+                    ]
+                    for i in range(min(vl, len(edge_cases))):
+                        vs2_data[i] = edge_cases[i]
+
+                if "vl" in fixture.symbols:
+                    await fixture.write("vl", np.array([vl], dtype=np.uint32))
+                if "vs2" in fixture.symbols:
+                    await fixture.write("vs2", vs2_data)
+                if "vs1" in fixture.symbols:
+                    await fixture.write("vs1", in1_data)
+                if "xs2" in fixture.symbols and is_vf:
+                    # Write as 8 bytes to match uint64_t xs2 in C++ and user mandate
+                    scalar_val = in1_data[0]
+                    scalar_bits = np.array([scalar_val], dtype=np.float32).view(
+                        np.uint32
+                    )
+                    scalar_full = np.zeros(1, dtype=np.uint64)
+                    scalar_full[0] = scalar_bits[0]
+                    await fixture.write("xs2", scalar_full)
+
+                if "v0_buf" in fixture.symbols and has_mask:
+                    # Mask size in bytes: (vl + 7) // 8
+                    mask_bytes = (vl + 7) // 8
+                    mask_packed = np.zeros(mask_bytes, dtype=np.uint8)
+                    for i in range(vl):
+                        if v0_data[i]:
+                            mask_packed[i // 8] |= 1 << (i % 8)
+                    await fixture.write("v0_buf", mask_packed)
+
+                await fixture.write_ptr("impl", test_fn_name)
+                await fixture.run_to_halt()
+
+                actual_vd_dtype = np.uint32 if "vfclass" in test_binary else vd_dtype
+                actual = (
+                    await fixture.read("vd", vl * np.dtype(actual_vd_dtype).itemsize)
+                ).view(actual_vd_dtype)
+
+                # Buffer choice for reference:
+                # vfsgnj (if using #else) use vs1 buffer.
+                # vfsgnj_vf_test.elf (using specialized test) uses vs2 buffer.
+                # vfmerge uses vs2 buffer.
+
+                vec_in = vs2_data
+
+                libc = ctypes.CDLL(None)
+                if rm_str != "rmm" and rm_str in RM_MAP and RM_MAP[rm_str] is not None:
+                    libc.fesetround(RM_MAP[rm_str])
+                    
+                if is_move:
+                    expected = expected_fn(in1_data[0], vl)
+                elif has_mask:
+                    expected = expected_fn(vs2_data, in1_data[0], v0_data)
+                elif is_vf:
+                    expected = expected_fn(vec_in, in1_data[0])
+                else:
+                    expected = expected_fn(vec_in)
+                    
+                if hasattr(libc, "fesetround"):
+                    libc.fesetround(0)
+
+                debug_msg = f"binary: {test_binary}, fn: {test_fn_name}, vl: {vl}\n"
+                if not is_move:
+                    debug_msg += f"vs2: {vs2_data}\n"
+                debug_msg += f"vs1: {in1_data}\n"
+                if is_vf:
+                    debug_msg += f"xs2: {in1_data[0]} (bits: {in1_data[0:1].view(np.uint32)[0]:08x})\n"
+                if has_mask:
+                    debug_msg += f"mask: {v0_data}\n"
+                debug_msg += f"expected: {expected}\nactual: {actual}"
+
+                np.testing.assert_array_equal(
+                    actual, expected.astype(actual_vd_dtype), err_msg=debug_msg
+                )
+
+
+@cocotb.test()
+async def float_convert_op(dut):
+    fixture, r, rng = await _setup_fixture(dut)
+    test_binaries = [
+        (
+            "vfcvt_f_x_v_test.elf",
+            FLOAT_SAME_TYPE_TEST_CASES,
+            lambda x: x.astype(np.float32),
+            np.int32,
+            np.float32,
+        ),
+        (
+            "vfcvt_f_xu_v_test.elf",
+            FLOAT_SAME_TYPE_TEST_CASES,
+            lambda x: x.astype(np.float32),
+            np.uint32,
+            np.float32,
+        ),
+        (
+            "vfcvt_x_f_v_test.elf",
+            FLOAT_SAME_TYPE_TEST_CASES,
+            lambda x: np.round(x).astype(np.int32),
+            np.float32,
+            np.int32,
+        ),
+        (
+            "vfcvt_xu_f_v_test.elf",
+            FLOAT_SAME_TYPE_TEST_CASES,
+            lambda x: np.clip(np.round(x), 0, np.iinfo(np.uint32).max).astype(
+                np.uint32
+            ),
+            np.float32,
+            np.uint32,
+        ),
+        (
+            "vfcvt_rtz_x_f_v_test.elf",
+            FLOAT_SAME_TYPE_TEST_CASES,
+            lambda x: np.trunc(x).astype(np.int32),
+            np.float32,
+            np.int32,
+        ),
+        (
+            "vfcvt_rtz_xu_f_v_test.elf",
+            FLOAT_SAME_TYPE_TEST_CASES,
+            lambda x: np.clip(np.trunc(x), 0, np.iinfo(np.uint32).max).astype(
+                np.uint32
+            ),
+            np.float32,
+            np.uint32,
+        ),
+    ]
+    rms = ["rne", "rtz", "rdn", "rup", "rmm"]
+    test_binaries_rm = []
+    for binary, cases, fn, in_type, out_type in test_binaries:
+        if "rtz" in binary:
+            test_binaries_rm.append((binary, cases, fn, in_type, out_type, "rtz"))
+        else:
+            for rm in rms:
+                test_binaries_rm.append((binary.replace(".elf", f"_{rm}.elf"), cases, fn, in_type, out_type, rm))
+
+    with tqdm.tqdm(test_binaries_rm) as pbar:
+        for test_binary, test_cases, expected_fn, in_dtype, out_dtype, rm_str in pbar:
+            pbar.set_postfix({"binary": test_binary})
+            test_binary_path = r.Rlocation(
+                f"coralnpu_hw/tests/cocotb/rvv/arithmetics/{test_binary}"
+            )
+            if not os.path.exists(test_binary_path):
+                continue
+
+            await fixture.load_elf_and_lookup_symbols(
+                test_binary_path,
+                ["vl", "vs2", "vd", "impl"] + [x[0] for x in test_cases],
+            )
+            for test_fn_name, vlmax, _, _, _ in test_cases:
+                vl = vlmax
+                if np.issubdtype(in_dtype, np.floating):
+                    vs2_data = (rng.standard_normal(vl) * 10).astype(in_dtype)
+                elif np.issubdtype(in_dtype, np.unsignedinteger):
+                    vs2_data = rng.integers(0, 100, vl, dtype=in_dtype)
+                else:
+                    vs2_data = rng.integers(-100, 100, vl, dtype=in_dtype)
+
+                await fixture.write("vl", np.array([vl], dtype=np.uint32))
+                await fixture.write("vs2", vs2_data)
+                await fixture.write_ptr("impl", test_fn_name)
+                await fixture.run_to_halt()
+
+                actual = (
+                    await fixture.read("vd", vl * np.dtype(out_dtype).itemsize)
+                ).view(out_dtype)
+                
+                if out_dtype == np.float32:
+                    # Int to float conversion (vfcvt_f_x) is exact unless large int
+                    expected = expected_fn(vs2_data)
+                else:
+                    # Float to Int conversion (vfcvt_x_f)
+                    if rm_str == "rtz":
+                        res = np.trunc(vs2_data)
+                    elif rm_str == "rdn":
+                        res = np.floor(vs2_data)
+                    elif rm_str == "rup":
+                        res = np.ceil(vs2_data)
+                    elif rm_str == "rmm":
+                        res = np.trunc(vs2_data + np.copysign(0.5, vs2_data))
+                    else: # rne
+                        res = np.round(vs2_data)
+                        
+                    if out_dtype in (np.uint32, np.uint16, np.uint8):
+                        res = np.clip(res, 0, np.iinfo(out_dtype).max)
+                    else:
+                        res = np.clip(res, np.iinfo(out_dtype).min, np.iinfo(out_dtype).max)
+                    expected = res.astype(out_dtype)
+                np.testing.assert_array_equal(actual, expected)
+

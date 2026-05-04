@@ -18,6 +18,14 @@ load("//tests/cocotb/rvv/arithmetics:rvv_arithmetic.bzl", "rvv_arithmetic_test",
 
 package(default_visibility = ["//visibility:public"])
 
+RM_VALS = {
+    "rne": "0",
+    "rtz": "1",
+    "rdn": "2",
+    "rup": "3",
+    "rmm": "4"
+}
+
 MATH_OPS = [
     "add",
     "sub",
@@ -60,10 +68,27 @@ FLOAT_MATH_OPS = [
     "fsub",
     "fmul",
     "fdiv",
+    "fmin",
+    "fmax",
+    "fsgnj",
+    "fsgnjn",
+    "fsgnjx",
+    "fmacc",
+    "fnmacc",
+    "fmadd",
+    "fnmadd",
+    "fmsac",
+    "fnmsac",
+    "fmsub",
+    "fnmsub",
+    "frsub",
+    "frdiv",
+    "fsqrt",
 ]
 
 FLOAT_REDUCTION_OPS = [
     "fredusum",
+    "fredosum",
     "fredmin",
     "fredmax",
 ]
@@ -103,7 +128,11 @@ FLOAT_MATH_OP_TYPE_PAIRS = [
 
 MATH_WIDEN_OP_TYPE_PAIRS = [
     (op, sign, in_dtype, out_dtype, in_sew, out_sew, vl_step, num_test_values)
-    for op in ["add", "sub", "mul"]
+    for op in [
+        "add",
+        "sub",
+        "mul",
+    ]
     for (sign, in_dtype, out_dtype, in_sew, out_sew, vl_step, num_test_values) in WIDEN_DTYPES
 ]
 
@@ -129,12 +158,49 @@ template_rule(
             "sign": sign,
             "num_operands": vl,
             "math_op": [
-                op + "u" if op in ["div", "min", "max", "sadd", "ssub", "aadd", "asub", "mulh", "rem"] and sign == "u" else op
+                op + "u" if op in [
+                    "div",
+                    "min",
+                    "max",
+                    "sadd",
+                    "ssub",
+                    "aadd",
+                    "asub",
+                    "mulh",
+                    "rem",
+                ] and sign == "u" else op,
             ][0],
-            "extra_args": ", 0" if op in ["aadd", "asub", "smul", "ssra", "ssrl"] else "",
+            "extra_args": ", 0" if op in [
+                "aadd",
+                "asub",
+                "smul",
+                "ssra",
+                "ssrl",
+            ] else "",
             "defines": "\n".join([
-                "#define TEST_TERNARY" if op in ["macc", "nmsac", "madd", "nmsub"] else "",
-                "#define SHIFT_OP" if op in ["sll", "srl", "sra", "ssra", "ssrl"] else "",
+                "#define TEST_TERNARY" if op in [
+                    "macc",
+                    "nmsac",
+                    "madd",
+                    "nmsub",
+                    "fmacc",
+                    "fnmacc",
+                    "fmadd",
+                    "fnmadd",
+                    "fmsac",
+                    "fnmsac",
+                    "fmsub",
+                    "fnmsub",
+                ] else "",
+                "#define TEST_UNARY" if op in ["fsqrt"] else "",
+                "#define TEST_FLOAT" if op in ["fsqrt"] else "",
+                "#define SHIFT_OP" if op in [
+                    "sll",
+                    "srl",
+                    "sra",
+                    "ssra",
+                    "ssrl",
+                ] else "",
                 "#define SIGN_i 1",
                 "#define SIGN_u 0",
                 "#define SIGN_f 2",
@@ -142,10 +208,55 @@ template_rule(
             "in_data_size": "16",
             "out_data_size": "16",
         }
-        for (op, sew, sign, dtype, vl) in MATH_OP_TYPE_PAIRS + FLOAT_MATH_OP_TYPE_PAIRS
-        if not (op == "smul" and sign == "u")
-        and not (op in ["sra", "ssra"] and sign == "u")
-        and not (op in ["srl", "ssrl"] and sign == "i")
+        for (op, sew, sign, dtype, vl) in MATH_OP_TYPE_PAIRS
+        if not (op == "smul" and sign == "u") and not (op in [
+               "frsub",
+               "frdiv",
+           ]) and
+           not (op in [
+               "sra",
+               "ssra",
+           ] and sign == "u") and
+           not (op in [
+               "srl",
+               "ssrl",
+           ] and sign == "i")
+    },
+)
+
+
+template_rule(
+    rvv_arithmetic_test,
+    {
+        "template_{}_{}_{}_m1".format(op, dtype, rm): {
+            "dtype": dtype,
+            "sew": sew,
+            "sign": sign,
+            "num_operands": vl,
+            "math_op": op,
+            "extra_args": "",
+            "defines": "\n".join([
+                "#define TEST_TERNARY" if op in [
+                    "fmacc",
+                    "fnmacc",
+                    "fmadd",
+                    "fnmadd",
+                    "fmsac",
+                    "fnmsac",
+                    "fmsub",
+                    "fnmsub",
+                ] else "",
+                "#define TEST_UNARY" if op in ["fsqrt"] else "",
+                "#define TEST_FLOAT",
+                "#define SIGN_f 2",
+                "#define TEST_RM {}".format(RM_VALS[rm])
+            ]),
+            "in_data_size": "16",
+            "out_data_size": "16",
+        }
+        for (op, sew, sign, dtype, vl) in FLOAT_MATH_OP_TYPE_PAIRS
+        for rm in RM_VALS.keys()
+        if not (op in ["frsub", "frdiv"])
     },
 )
 
@@ -189,13 +300,34 @@ template_rule(
         "rvv_{}_{}_m1".format(op, dtype): {
             "srcs": ["template_{}_{}_m1".format(op, dtype)],
         }
-        for (op, _, sign, dtype, _) in MATH_OP_TYPE_PAIRS + REDUCTION_OP_TYPE_PAIRS + FLOAT_MATH_OP_TYPE_PAIRS + FLOAT_REDUCTION_OP_TYPE_PAIRS
-        if not (op == "smul" and sign == "u")
-        and not (op in ["sra", "ssra"] and sign == "u")
-        and not (op in ["srl", "ssrl"] and sign == "i")
+        for (op, _, sign, dtype, _) in MATH_OP_TYPE_PAIRS + REDUCTION_OP_TYPE_PAIRS + FLOAT_REDUCTION_OP_TYPE_PAIRS
+        if not (op == "smul" and sign == "u") and not (op in [
+               "frsub",
+               "frdiv",
+           ]) and
+           not (op in [
+               "sra",
+               "ssra",
+           ] and sign == "u") and
+           not (op in [
+               "srl",
+               "ssrl",
+           ] and sign == "i")
     },
 )
 
+
+template_rule(
+    coralnpu_v2_binary,
+    {
+        "rvv_{}_{}_{}_m1".format(op, dtype, rm): {
+            "srcs": ["template_{}_{}_{}_m1".format(op, dtype, rm)],
+        }
+        for (op, _, sign, dtype, _) in FLOAT_MATH_OP_TYPE_PAIRS
+        for rm in RM_VALS.keys()
+        if not (op in ["frsub", "frdiv"])
+    },
+)
 
 template_rule(
     coralnpu_v2_binary,
@@ -226,131 +358,903 @@ template_rule(
 )
 
 SAME_TYPE_BINARY_VX_CASES = [
-    ("vadd_vx_test", "Vadd", ["TEST_INT"]),
-    ("vsadd_vx_test", "Vsadd", ["TEST_INT"]),
-    ("vsub_vx_test", "Vsub", ["TEST_INT"]),
-    ("vssub_vx_test", "Vssub", ["TEST_INT"]),
-    ("vrsub_vx_test", "Vrsub", ["TEST_INT"]),
-    ("vmul_vx_test", "Vmul", ["TEST_INT"]),
-    ("vmulh_vx_test", "Vmulh", ["TEST_INT"]),
-    ("vmin_vx_test", "Vmin", ["TEST_INT"]),
-    ("vmax_vx_test", "Vmax", ["TEST_INT"]),
-    ("vand_vx_test", "Vand", ["TEST_INT"]),
-    ("vor_vx_test", "Vor", ["TEST_INT"]),
-    ("vxor_vx_test", "Vxor", ["TEST_INT"]),
-    ("vaadd_vx_test", "Vaadd", ["TEST_INT"]),
-    ("vaaddu_vx_test", "Vaadd", ["UNSIGNED_ONLY", "TEST_INT"]),
-    ("vasub_vx_test", "Vasub", ["TEST_INT"]),
-    ("vasubu_vx_test", "Vasub", ["UNSIGNED_ONLY", "TEST_INT"]),
-    ("vsmul_vx_test", "Vsmul", ["SIGNED_ONLY", "TEST_INT"]),
-    ("vdiv_vx_test", "Vdiv", ["TEST_INT"]),
-    ("vrem_vx_test", "Vrem", ["TEST_INT"]),
-    ("vfadd_vf_test", "Vfadd", ["TEST_FLOAT"]),
-    ("vfsub_vf_test", "Vfsub", ["TEST_FLOAT"]),
-    ("vfmul_vf_test", "Vfmul", ["TEST_FLOAT"]),
-    ("vfdiv_vf_test", "Vfdiv", ["TEST_FLOAT"]),
+    (
+        "vadd_vx_test",
+        "Vadd",
+        ["TEST_INT"],
+    ),
+    (
+        "vsadd_vx_test",
+        "Vsadd",
+        ["TEST_INT"],
+    ),
+    (
+        "vsub_vx_test",
+        "Vsub",
+        ["TEST_INT"],
+    ),
+    (
+        "vssub_vx_test",
+        "Vssub",
+        ["TEST_INT"],
+    ),
+    (
+        "vrsub_vx_test",
+        "Vrsub",
+        ["TEST_INT"],
+    ),
+    (
+        "vmul_vx_test",
+        "Vmul",
+        ["TEST_INT"],
+    ),
+    (
+        "vmulh_vx_test",
+        "Vmulh",
+        ["TEST_INT"],
+    ),
+    (
+        "vmin_vx_test",
+        "Vmin",
+        ["TEST_INT"],
+    ),
+    (
+        "vmax_vx_test",
+        "Vmax",
+        ["TEST_INT"],
+    ),
+    (
+        "vand_vx_test",
+        "Vand",
+        ["TEST_INT"],
+    ),
+    (
+        "vor_vx_test",
+        "Vor",
+        ["TEST_INT"],
+    ),
+    (
+        "vxor_vx_test",
+        "Vxor",
+        ["TEST_INT"],
+    ),
+    (
+        "vaadd_vx_test",
+        "Vaadd",
+        ["TEST_INT"],
+    ),
+    (
+        "vaaddu_vx_test",
+        "Vaadd",
+        [
+            "UNSIGNED_ONLY",
+            "TEST_INT",
+        ],
+    ),
+    (
+        "vasub_vx_test",
+        "Vasub",
+        ["TEST_INT"],
+    ),
+    (
+        "vasubu_vx_test",
+        "Vasub",
+        [
+            "UNSIGNED_ONLY",
+            "TEST_INT",
+        ],
+    ),
+    (
+        "vsmul_vx_test",
+        "Vsmul",
+        [
+            "SIGNED_ONLY",
+            "TEST_INT",
+        ],
+    ),
+    (
+        "vdiv_vx_test",
+        "Vdiv",
+        ["TEST_INT"],
+    ),
+    (
+        "vrem_vx_test",
+        "Vrem",
+        ["TEST_INT"],
+    ),
+    (
+        "vfadd_vf_test",
+        "Vfadd",
+        ["TEST_FLOAT"],
+    ),
+    (
+        "vfsub_vf_test",
+        "Vfsub",
+        ["TEST_FLOAT"],
+    ),
+    (
+        "vfmul_vf_test",
+        "Vfmul",
+        ["TEST_FLOAT"],
+    ),
+    (
+        "vfdiv_vf_test",
+        "Vfdiv",
+        ["TEST_FLOAT"],
+    ),
+    (
+        "vfrsub_vf_test",
+        "Vfrsub",
+        ["TEST_FLOAT"],
+    ),
+    (
+        "vfrdiv_vf_test",
+        "Vfrdiv",
+        ["TEST_FLOAT"],
+    ),
 ]
 
 SAME_TYPE_TERNARY_VX_CASES = [
-    ("vmacc_vx_test", "Vmacc", ["TEST_INT", "TEST_TERNARY"]),
-    ("vnmsac_vx_test", "Vnmsac", ["TEST_INT", "TEST_TERNARY"]),
-    ("vmadd_vx_test", "Vmadd", ["TEST_INT", "TEST_TERNARY"]),
-    ("vnmsub_vx_test", "Vnmsub", ["TEST_INT", "TEST_TERNARY"]),
+    (
+        "vmacc_vx_test",
+        "Vmacc",
+        [
+            "TEST_INT",
+            "TEST_TERNARY",
+        ],
+    ),
+    (
+        "vnmsac_vx_test",
+        "Vnmsac",
+        [
+            "TEST_INT",
+            "TEST_TERNARY",
+        ],
+    ),
+    (
+        "vmadd_vx_test",
+        "Vmadd",
+        [
+            "TEST_INT",
+            "TEST_TERNARY",
+        ],
+    ),
+    (
+        "vnmsub_vx_test",
+        "Vnmsub",
+        [
+            "TEST_INT",
+            "TEST_TERNARY",
+        ],
+    ),
+    (
+        "vfmacc_vf_test",
+        "Vfmacc",
+        ["TEST_FLOAT", "TEST_TERNARY"],
+    ),
+    (
+        "vfnmacc_vf_test",
+        "Vfnmacc",
+        ["TEST_FLOAT", "TEST_TERNARY"],
+    ),
+    (
+        "vfmadd_vf_test",
+        "Vfmadd",
+        ["TEST_FLOAT", "TEST_TERNARY"],
+    ),
+    (
+        "vfnmadd_vf_test",
+        "Vfnmadd",
+        ["TEST_FLOAT", "TEST_TERNARY"],
+    ),
+    (
+        "vfmsac_vf_test",
+        "Vfmsac",
+        ["TEST_FLOAT", "TEST_TERNARY"],
+    ),
+    (
+        "vfnmsac_vf_test",
+        "Vfnmsac",
+        ["TEST_FLOAT", "TEST_TERNARY"],
+    ),
+    (
+        "vfmsub_vf_test",
+        "Vfmsub",
+        ["TEST_FLOAT", "TEST_TERNARY"],
+    ),
+    (
+        "vfnmsub_vf_test",
+        "Vfnmsub",
+        ["TEST_FLOAT", "TEST_TERNARY"],
+    ),
 ]
 
 SAME_TYPE_IMMEDIATE_VX_CASES = [
-    ("vadd_vi_test", "VaddVi", ["TEST_INT", "TEST_VI"]),
-    ("vsadd_vi_test", "VsaddVi", ["TEST_INT", "TEST_VI"]),
-    ("vand_vi_test", "VandVi", ["TEST_INT", "TEST_VI"]),
-    ("vor_vi_test", "VorVi", ["TEST_INT", "TEST_VI"]),
-    ("vxor_vi_test", "VxorVi", ["TEST_INT", "TEST_VI"]),
-    ("vsll_vi_test", "VsllVi", ["TEST_INT", "TEST_VI"]),
-    ("vsrl_vi_test", "VsrlVi", ["UNSIGNED_ONLY", "TEST_INT", "TEST_VI"]),
-    ("vsra_vi_test", "VsraVi", ["SIGNED_ONLY", "TEST_INT", "TEST_VI"]),
-    ("vssrl_vi_test", "VssrlVi", ["UNSIGNED_ONLY", "TEST_INT", "TEST_VI"]),
-    ("vssra_vi_test", "VssraVi", ["SIGNED_ONLY", "TEST_INT", "TEST_VI"]),
-    ("vrsub_vi_test", "VrsubVi", ["TEST_INT", "TEST_VI"]),
+    (
+        "vadd_vi_test",
+        "VaddVi",
+        [
+            "TEST_INT",
+            "TEST_VI",
+        ],
+    ),
+    (
+        "vsadd_vi_test",
+        "VsaddVi",
+        [
+            "TEST_INT",
+            "TEST_VI",
+        ],
+    ),
+    (
+        "vand_vi_test",
+        "VandVi",
+        [
+            "TEST_INT",
+            "TEST_VI",
+        ],
+    ),
+    (
+        "vor_vi_test",
+        "VorVi",
+        [
+            "TEST_INT",
+            "TEST_VI",
+        ],
+    ),
+    (
+        "vxor_vi_test",
+        "VxorVi",
+        [
+            "TEST_INT",
+            "TEST_VI",
+        ],
+    ),
+    (
+        "vsll_vi_test",
+        "VsllVi",
+        [
+            "TEST_INT",
+            "TEST_VI",
+        ],
+    ),
+    (
+        "vsrl_vi_test",
+        "VsrlVi",
+        [
+            "UNSIGNED_ONLY",
+            "TEST_INT",
+            "TEST_VI",
+        ],
+    ),
+    (
+        "vsra_vi_test",
+        "VsraVi",
+        [
+            "SIGNED_ONLY",
+            "TEST_INT",
+            "TEST_VI",
+        ],
+    ),
+    (
+        "vssrl_vi_test",
+        "VssrlVi",
+        [
+            "UNSIGNED_ONLY",
+            "TEST_INT",
+            "TEST_VI",
+        ],
+    ),
+    (
+        "vssra_vi_test",
+        "VssraVi",
+        [
+            "SIGNED_ONLY",
+            "TEST_INT",
+            "TEST_VI",
+        ],
+    ),
+    (
+        "vrsub_vi_test",
+        "VrsubVi",
+        [
+            "TEST_INT",
+            "TEST_VI",
+        ],
+    ),
 ]
 
 WIDENING_BINARY_VX_CASES = [
-    ("vwadd_vx_test", "Vwadd", ["TEST_INT", "TEST_WIDEN_VX"]),
-    ("vwaddu_vx_test", "Vwadd", ["UNSIGNED_ONLY", "TEST_INT", "TEST_WIDEN_VX"]),
-    ("vwsub_vx_test", "Vwsub", ["TEST_INT", "TEST_WIDEN_VX"]),
-    ("vwsubu_vx_test", "Vwsub", ["UNSIGNED_ONLY", "TEST_INT", "TEST_WIDEN_VX"]),
-    ("vwmul_vx_test", "Vwmul", ["SIGNED_ONLY", "TEST_INT", "TEST_WIDEN_VX"]),
-    ("vwmulu_vx_test", "Vwmul", ["UNSIGNED_ONLY", "TEST_INT", "TEST_WIDEN_VX"]),
+    (
+        "vwadd_vx_test",
+        "Vwadd",
+        [
+            "TEST_INT",
+            "TEST_WIDEN_VX",
+        ],
+    ),
+    (
+        "vwaddu_vx_test",
+        "Vwadd",
+        [
+            "UNSIGNED_ONLY",
+            "TEST_INT",
+            "TEST_WIDEN_VX",
+        ],
+    ),
+    (
+        "vwsub_vx_test",
+        "Vwsub",
+        [
+            "TEST_INT",
+            "TEST_WIDEN_VX",
+        ],
+    ),
+    (
+        "vwsubu_vx_test",
+        "Vwsub",
+        [
+            "UNSIGNED_ONLY",
+            "TEST_INT",
+            "TEST_WIDEN_VX",
+        ],
+    ),
+    (
+        "vwmul_vx_test",
+        "Vwmul",
+        [
+            "SIGNED_ONLY",
+            "TEST_INT",
+            "TEST_WIDEN_VX",
+        ],
+    ),
+    (
+        "vwmulu_vx_test",
+        "Vwmul",
+        [
+            "UNSIGNED_ONLY",
+            "TEST_INT",
+            "TEST_WIDEN_VX",
+        ],
+    ),
 ]
 
 WIDENING_BINARY_WV_CASES = [
-    ("vwadd_wv_test", "VwaddW", ["TEST_INT", "TEST_WIDEN_WV"]),
-    ("vwaddu_wv_test", "VwaddW", ["UNSIGNED_ONLY", "TEST_INT", "TEST_WIDEN_WV"]),
-    ("vwsub_wv_test", "VwsubW", ["TEST_INT", "TEST_WIDEN_WV"]),
-    ("vwsubu_wv_test", "VwsubW", ["UNSIGNED_ONLY", "TEST_INT", "TEST_WIDEN_WV"]),
+    (
+        "vwadd_wv_test",
+        "VwaddW",
+        [
+            "TEST_INT",
+            "TEST_WIDEN_WV",
+        ],
+    ),
+    (
+        "vwaddu_wv_test",
+        "VwaddW",
+        [
+            "UNSIGNED_ONLY",
+            "TEST_INT",
+            "TEST_WIDEN_WV",
+        ],
+    ),
+    (
+        "vwsub_wv_test",
+        "VwsubW",
+        [
+            "TEST_INT",
+            "TEST_WIDEN_WV",
+        ],
+    ),
+    (
+        "vwsubu_wv_test",
+        "VwsubW",
+        [
+            "UNSIGNED_ONLY",
+            "TEST_INT",
+            "TEST_WIDEN_WV",
+        ],
+    ),
 ]
 
 WIDENING_BINARY_WX_CASES = [
-    ("vwadd_wx_test", "VwaddW", ["TEST_INT", "TEST_WIDEN_WX"]),
-    ("vwaddu_wx_test", "VwaddW", ["UNSIGNED_ONLY", "TEST_INT", "TEST_WIDEN_WX"]),
-    ("vwsub_wx_test", "VwsubW", ["TEST_INT", "TEST_WIDEN_WX"]),
-    ("vwsubu_wx_test", "VwsubW", ["UNSIGNED_ONLY", "TEST_INT", "TEST_WIDEN_WX"]),
+    (
+        "vwadd_wx_test",
+        "VwaddW",
+        [
+            "TEST_INT",
+            "TEST_WIDEN_WX",
+        ],
+    ),
+    (
+        "vwaddu_wx_test",
+        "VwaddW",
+        [
+            "UNSIGNED_ONLY",
+            "TEST_INT",
+            "TEST_WIDEN_WX",
+        ],
+    ),
+    (
+        "vwsub_wx_test",
+        "VwsubW",
+        [
+            "TEST_INT",
+            "TEST_WIDEN_WX",
+        ],
+    ),
+    (
+        "vwsubu_wx_test",
+        "VwsubW",
+        [
+            "UNSIGNED_ONLY",
+            "TEST_INT",
+            "TEST_WIDEN_WX",
+        ],
+    ),
 ]
 
 SPECIAL_BINARY_CASES = [
-    ("vmerge_vv_test", "Vmerge", ["TEST_INT", "TEST_MERGE"]),
-    ("vmv_v_v_test", "Vmv", ["TEST_INT", "TEST_VMV"]),
+    (
+        "vmerge_vv_test",
+        "Vmerge",
+        [
+            "TEST_INT",
+            "TEST_MERGE",
+        ],
+    ),
+    (
+        "vmv_v_v_test",
+        "Vmv",
+        [
+            "TEST_INT",
+            "TEST_VMV",
+        ],
+    ),
 ]
 
 CARRY_CASES = [
-    ("vadc_vvm_test", "Vadc", ["TEST_INT", "TEST_CARRY"]),
-    ("vadc_vxm_test", "Vadc", ["TEST_INT", "TEST_CARRY_VX"]),
-    ("vsbc_vvm_test", "Vsbc", ["TEST_INT", "TEST_CARRY"]),
-    ("vsbc_vxm_test", "Vsbc", ["TEST_INT", "TEST_CARRY_VX"]),
+    (
+        "vadc_vvm_test",
+        "Vadc",
+        [
+            "TEST_INT",
+            "TEST_CARRY",
+        ],
+    ),
+    (
+        "vadc_vxm_test",
+        "Vadc",
+        [
+            "TEST_INT",
+            "TEST_CARRY_VX",
+        ],
+    ),
+    (
+        "vsbc_vvm_test",
+        "Vsbc",
+        [
+            "TEST_INT",
+            "TEST_CARRY",
+        ],
+    ),
+    (
+        "vsbc_vxm_test",
+        "Vsbc",
+        [
+            "TEST_INT",
+            "TEST_CARRY_VX",
+        ],
+    ),
 ]
 
 MADV_CASES = [
-    ("vmadc_vvm_test", "Vmadc", ["TEST_INT", "TEST_MADV"]),
-    ("vmadc_vxm_test", "Vmadc", ["TEST_INT", "TEST_MADV_VX"]),
-    ("vmadc_vv_test", "Vmadc", ["TEST_INT", "TEST_MADV_NO_M"]),
-    ("vmadc_vx_test", "Vmadc", ["TEST_INT", "TEST_MADV_NO_M_VX"]),
-    ("vmsbc_vvm_test", "Vmsbc", ["TEST_INT", "TEST_MADV"]),
-    ("vmsbc_vxm_test", "Vmsbc", ["TEST_INT", "TEST_MADV_VX"]),
-    ("vmsbc_vv_test", "Vmsbc", ["TEST_INT", "TEST_MADV_NO_M"]),
-    ("vmsbc_vx_test", "Vmsbc", ["TEST_INT", "TEST_MADV_NO_M_VX"]),
+    (
+        "vmadc_vvm_test",
+        "Vmadc",
+        [
+            "TEST_INT",
+            "TEST_MADV",
+        ],
+    ),
+    (
+        "vmadc_vxm_test",
+        "Vmadc",
+        [
+            "TEST_INT",
+            "TEST_MADV_VX",
+        ],
+    ),
+    (
+        "vmadc_vv_test",
+        "Vmadc",
+        [
+            "TEST_INT",
+            "TEST_MADV_NO_M",
+        ],
+    ),
+    (
+        "vmadc_vx_test",
+        "Vmadc",
+        [
+            "TEST_INT",
+            "TEST_MADV_NO_M_VX",
+        ],
+    ),
+    (
+        "vmsbc_vvm_test",
+        "Vmsbc",
+        [
+            "TEST_INT",
+            "TEST_MADV",
+        ],
+    ),
+    (
+        "vmsbc_vxm_test",
+        "Vmsbc",
+        [
+            "TEST_INT",
+            "TEST_MADV_VX",
+        ],
+    ),
+    (
+        "vmsbc_vv_test",
+        "Vmsbc",
+        [
+            "TEST_INT",
+            "TEST_MADV_NO_M",
+        ],
+    ),
+    (
+        "vmsbc_vx_test",
+        "Vmsbc",
+        [
+            "TEST_INT",
+            "TEST_MADV_NO_M_VX",
+        ],
+    ),
 ]
 
 EXTENSION_CASES = [
-    ("vsext_vf2_test", "VsextF2", ["SIGNED_ONLY", "TEST_INT", "TEST_EXT", "EXT_FACTOR=2"]),
-    ("vsext_vf4_test", "VsextF4", ["SIGNED_ONLY", "TEST_INT", "TEST_EXT", "EXT_FACTOR=4"]),
-    ("vzext_vf2_test", "VzextF2", ["UNSIGNED_ONLY", "TEST_INT", "TEST_EXT", "EXT_FACTOR=2"]),
-    ("vzext_vf4_test", "VzextF4", ["UNSIGNED_ONLY", "TEST_INT", "TEST_EXT", "EXT_FACTOR=4"]),
+    (
+        "vsext_vf2_test",
+        "VsextF2",
+        [
+            "SIGNED_ONLY",
+            "TEST_INT",
+            "TEST_EXT",
+            "EXT_FACTOR=2",
+        ],
+    ),
+    (
+        "vsext_vf4_test",
+        "VsextF4",
+        [
+            "SIGNED_ONLY",
+            "TEST_INT",
+            "TEST_EXT",
+            "EXT_FACTOR=4",
+        ],
+    ),
+    (
+        "vzext_vf2_test",
+        "VzextF2",
+        [
+            "UNSIGNED_ONLY",
+            "TEST_INT",
+            "TEST_EXT",
+            "EXT_FACTOR=2",
+        ],
+    ),
+    (
+        "vzext_vf4_test",
+        "VzextF4",
+        [
+            "UNSIGNED_ONLY",
+            "TEST_INT",
+            "TEST_EXT",
+            "EXT_FACTOR=4",
+        ],
+    ),
 ]
 
 COMPARISON_VV_CASES = [
-    ("vmseq_vv_test", "Vmseq", ["TEST_INT", "TEST_COMP_VV"]),
-    ("vmsne_vv_test", "Vmsne", ["TEST_INT", "TEST_COMP_VV"]),
-    ("vmslt_vv_test", "Vmslt", ["TEST_INT", "TEST_COMP_VV"]),
-    ("vmsle_vv_test", "Vmsle", ["TEST_INT", "TEST_COMP_VV"]),
+    (
+        "vmseq_vv_test",
+        "Vmseq",
+        [
+            "TEST_INT",
+            "TEST_COMP_VV",
+        ],
+    ),
+    (
+        "vmsne_vv_test",
+        "Vmsne",
+        [
+            "TEST_INT",
+            "TEST_COMP_VV",
+        ],
+    ),
+    (
+        "vmslt_vv_test",
+        "Vmslt",
+        [
+            "TEST_INT",
+            "TEST_COMP_VV",
+        ],
+    ),
+    (
+        "vmsle_vv_test",
+        "Vmsle",
+        [
+            "TEST_INT",
+            "TEST_COMP_VV",
+        ],
+    ),
 ]
 
 COMPARISON_VX_CASES = [
-    ("vmseq_vx_test", "Vmseq", ["TEST_INT", "TEST_COMP_VX"]),
-    ("vmsne_vx_test", "Vmsne", ["TEST_INT", "TEST_COMP_VX"]),
-    ("vmslt_vx_test", "Vmslt", ["TEST_INT", "TEST_COMP_VX"]),
-    ("vmsle_vx_test", "Vmsle", ["TEST_INT", "TEST_COMP_VX"]),
-    ("vmsgt_vx_test", "Vmsgt", ["TEST_INT", "TEST_COMP_VX"]),
-    ("vmsge_vx_test", "Vmsge", ["TEST_INT", "TEST_COMP_VX"]),
+    (
+        "vmseq_vx_test",
+        "Vmseq",
+        [
+            "TEST_INT",
+            "TEST_COMP_VX",
+        ],
+    ),
+    (
+        "vmsne_vx_test",
+        "Vmsne",
+        [
+            "TEST_INT",
+            "TEST_COMP_VX",
+        ],
+    ),
+    (
+        "vmslt_vx_test",
+        "Vmslt",
+        [
+            "TEST_INT",
+            "TEST_COMP_VX",
+        ],
+    ),
+    (
+        "vmsle_vx_test",
+        "Vmsle",
+        [
+            "TEST_INT",
+            "TEST_COMP_VX",
+        ],
+    ),
+    (
+        "vmsgt_vx_test",
+        "Vmsgt",
+        [
+            "TEST_INT",
+            "TEST_COMP_VX",
+        ],
+    ),
+    (
+        "vmsge_vx_test",
+        "Vmsge",
+        [
+            "TEST_INT",
+            "TEST_COMP_VX",
+        ],
+    ),
+]
+
+FLOAT_COMPARISON_VV_CASES = [
+    (
+        "vmfeq_vv_test",
+        "Vmfeq",
+        [
+            "TEST_FLOAT",
+            "TEST_FCOMP_VV",
+        ],
+    ),
+    (
+        "vmfne_vv_test",
+        "Vmfne",
+        [
+            "TEST_FLOAT",
+            "TEST_FCOMP_VV",
+        ],
+    ),
+    (
+        "vmflt_vv_test",
+        "Vmflt",
+        [
+            "TEST_FLOAT",
+            "TEST_FCOMP_VV",
+        ],
+    ),
+    (
+        "vmfle_vv_test",
+        "Vmfle",
+        [
+            "TEST_FLOAT",
+            "TEST_FCOMP_VV",
+        ],
+    ),
+]
+
+FLOAT_COMPARISON_VF_CASES = [
+    (
+        "vmfeq_vf_test",
+        "Vmfeq",
+        [
+            "TEST_FLOAT",
+            "TEST_FCOMP_VF",
+        ],
+    ),
+    (
+        "vmfne_vf_test",
+        "Vmfne",
+        [
+            "TEST_FLOAT",
+            "TEST_FCOMP_VF",
+        ],
+    ),
+    (
+        "vmflt_vf_test",
+        "Vmflt",
+        [
+            "TEST_FLOAT",
+            "TEST_FCOMP_VF",
+        ],
+    ),
+    (
+        "vmfle_vf_test",
+        "Vmfle",
+        [
+            "TEST_FLOAT",
+            "TEST_FCOMP_VF",
+        ],
+    ),
+    (
+        "vmfgt_vf_test",
+        "Vmfgt",
+        [
+            "TEST_FLOAT",
+            "TEST_FCOMP_VF",
+        ],
+    ),
+    (
+        "vmfge_vf_test",
+        "Vmfge",
+        [
+            "TEST_FLOAT",
+            "TEST_FCOMP_VF",
+        ],
+    ),
+]
+
+FLOAT_MISC_CASES = [
+    (
+        "vfclass_v_test",
+        "Vfclass",
+        [
+            "TEST_FLOAT",
+            "TEST_VFCLASS",
+        ],
+    ),
+    (
+        "vfmerge_vfm_test",
+        "Vfmerge",
+        [
+            "TEST_FLOAT",
+            "TEST_VFMERGE",
+        ],
+    ),
+    (
+        "vfmv_v_f_test",
+        "Vfmv",
+        [
+            "TEST_FLOAT",
+            "TEST_VFMV",
+        ],
+    ),
+    (
+        "vfsgnj_vf_test",
+        "Vfsgnj",
+        [
+            "TEST_FLOAT",
+            "TEST_FSGNJ_VF",
+        ],
+    ),
+    (
+        "vfsgnjn_vf_test",
+        "Vfsgnjn",
+        [
+            "TEST_FLOAT",
+            "TEST_FSGNJN_VF",
+        ],
+    ),
+    (
+        "vfsgnjx_vf_test",
+        "Vfsgnjx",
+        [
+            "TEST_FLOAT",
+            "TEST_FSGNJX_VF",
+        ],
+    ),
+]
+
+FLOAT_CONVERT_CASES = [
+    (
+        "vfcvt_f_x_v_test",
+        "VfcvtFX",
+        [
+            "TEST_FLOAT",
+            "TEST_VFCVT_F_X",
+        ],
+    ),
+    (
+        "vfcvt_f_xu_v_test",
+        "VfcvtFXu",
+        [
+            "TEST_FLOAT",
+            "TEST_VFCVT_F_XU",
+        ],
+    ),
+    (
+        "vfcvt_x_f_v_test",
+        "VfcvtXF",
+        [
+            "TEST_FLOAT",
+            "TEST_VFCVT_X_F",
+        ],
+    ),
+    (
+        "vfcvt_xu_f_v_test",
+        "VfcvtXuF",
+        [
+            "TEST_FLOAT",
+            "TEST_VFCVT_XU_F",
+        ],
+    ),
+    (
+        "vfcvt_rtz_x_f_v_test",
+        "VfcvtRtzXF",
+        [
+            "TEST_FLOAT",
+            "TEST_VFCVT_RTZ_X_F",
+        ],
+    ),
+    (
+        "vfcvt_rtz_xu_f_v_test",
+        "VfcvtRtzXuF",
+        [
+            "TEST_FLOAT",
+            "TEST_VFCVT_RTZ_XU_F",
+        ],
+    ),
 ]
 
 [
     coralnpu_v2_binary(
-        name = name,
+        name = "{}_{}".format(name, rm),
         srcs = ["rvv_vx_arithmetics.cc"],
-        defines = ["VX_FUNCTION={}".format(fn)] + extra_defines,
+        defines = extra_defines + ["TEST_RM={}".format(RM_VALS[rm])],
+        deps = [
+            "//coralnpu_test_utils:rvv_cpp_util",
+        ],
+    )
+    for name, fn, extra_defines in FLOAT_MISC_CASES + FLOAT_CONVERT_CASES
+    for rm in RM_VALS.keys()
+]
+
+[
+    coralnpu_v2_binary(
+        name = name if "TEST_FLOAT" not in extra_defines else "{}_{}".format(name, rm),
+        srcs = ["rvv_vx_arithmetics.cc"],
+        defines = ["VX_FUNCTION={}".format(fn)] + extra_defines + (["TEST_RM={}".format(RM_VALS[rm])] if "TEST_FLOAT" in extra_defines else []),
         deps = [
             "//coralnpu_test_utils:rvv_cpp_util",
         ],
     )
     for name, fn, extra_defines in SAME_TYPE_BINARY_VX_CASES + SAME_TYPE_TERNARY_VX_CASES + WIDENING_BINARY_VX_CASES
+    for rm in (RM_VALS.keys() if "TEST_FLOAT" in extra_defines else [""])
 ]
 
 [
@@ -410,7 +1314,7 @@ COMPARISON_VX_CASES = [
             "//coralnpu_test_utils:rvv_cpp_util",
         ],
     )
-    for name, fn, extra_defines in COMPARISON_VV_CASES + COMPARISON_VX_CASES
+    for name, fn, extra_defines in COMPARISON_VV_CASES + COMPARISON_VX_CASES + FLOAT_COMPARISON_VV_CASES + FLOAT_COMPARISON_VF_CASES
 ]
 
 [
@@ -427,11 +1331,15 @@ COMPARISON_VX_CASES = [
 
 filegroup(
     name = "rvv_same_type_binary_vx_cases",
-    srcs = ["{}.elf".format(name) for name, _, _ in (
+    srcs = ["{}.elf".format(name if "TEST_FLOAT" not in extra_defines else "{}_{}".format(name, rm)) for name, _, extra_defines in (
         SAME_TYPE_BINARY_VX_CASES +
         SAME_TYPE_TERNARY_VX_CASES +
+        WIDENING_BINARY_VX_CASES
+    ) for rm in (RM_VALS.keys() if "TEST_FLOAT" in extra_defines else [""])] +     ["{}_{}.elf".format(name, rm) for name, _, extra_defines in (
+        FLOAT_MISC_CASES +
+        FLOAT_CONVERT_CASES
+    ) for rm in RM_VALS.keys()] +     ["{}.elf".format(name) for name, _, extra_defines in (
         SAME_TYPE_IMMEDIATE_VX_CASES +
-        WIDENING_BINARY_VX_CASES +
         WIDENING_BINARY_WV_CASES +
         WIDENING_BINARY_WX_CASES +
         SPECIAL_BINARY_CASES +
@@ -439,15 +1347,38 @@ filegroup(
         MADV_CASES +
         EXTENSION_CASES +
         COMPARISON_VV_CASES +
-        COMPARISON_VX_CASES
+        COMPARISON_VX_CASES +
+        FLOAT_COMPARISON_VV_CASES +
+        FLOAT_COMPARISON_VF_CASES
     )],
 )
 
 MIXED_SIGN_SAME_WIDTH_BINARY_CASES = [
-    ("Vsll", ["TEST_INT"]),
-    ("Vsra", ["SIGNED_ONLY", "TEST_INT"]),
-    ("Vsrl", ["UNSIGNED_ONLY", "TEST_INT"]),
-    ("Vmulhsu", ["SIGNED_ONLY", "TEST_INT"]),
+    (
+        "Vsll",
+        ["TEST_INT"],
+    ),
+    (
+        "Vsra",
+        [
+            "SIGNED_ONLY",
+            "TEST_INT",
+        ],
+    ),
+    (
+        "Vsrl",
+        [
+            "UNSIGNED_ONLY",
+            "TEST_INT",
+        ],
+    ),
+    (
+        "Vmulhsu",
+        [
+            "SIGNED_ONLY",
+            "TEST_INT",
+        ],
+    ),
 ]
 
 [
@@ -459,7 +1390,7 @@ MIXED_SIGN_SAME_WIDTH_BINARY_CASES = [
             "FORCE_X_UNSIGNED",
         ] + extra_defines,
         deps = [
-            "//coralnpu_test_utils:rvv_cpp_util"
+            "//coralnpu_test_utils:rvv_cpp_util",
         ],
     )
     for fn, extra_defines in MIXED_SIGN_SAME_WIDTH_BINARY_CASES
@@ -469,17 +1400,32 @@ filegroup(
     name = "rvv_mixed_sign_same_width_type_binary_vx_cases",
     srcs = [
         "{}_vx_test.elf".format(fn.lower())
-        for fn, _ in MIXED_SIGN_SAME_WIDTH_BINARY_CASES],
+        for fn, _ in MIXED_SIGN_SAME_WIDTH_BINARY_CASES
+    ],
 )
 
 filegroup(
     name = "rvv_arith_tests",
     srcs = [
         ":rvv_{}_{}_m1.elf".format(op, dtype)
-        for (op, _, sign, dtype, _) in MATH_OP_TYPE_PAIRS + REDUCTION_OP_TYPE_PAIRS + FLOAT_MATH_OP_TYPE_PAIRS + FLOAT_REDUCTION_OP_TYPE_PAIRS
-        if not (op == "smul" and sign == "u")
-        and not (op in ["sra", "ssra"] and sign == "u")
-        and not (op in ["srl", "ssrl"] and sign == "i")
+        for (op, _, sign, dtype, _) in MATH_OP_TYPE_PAIRS + REDUCTION_OP_TYPE_PAIRS + FLOAT_REDUCTION_OP_TYPE_PAIRS
+        if not (op == "smul" and sign == "u") and not (op in [
+               "frsub",
+               "frdiv",
+           ]) and
+           not (op in [
+               "sra",
+               "ssra",
+           ] and sign == "u") and
+           not (op in [
+               "srl",
+               "ssrl",
+           ] and sign == "i")
+    ] + [
+        ":rvv_{}_{}_{}_m1.elf".format(op, dtype, rm)
+        for (op, _, sign, dtype, _) in FLOAT_MATH_OP_TYPE_PAIRS
+        for rm in RM_VALS.keys()
+        if not (op in ["frsub", "frdiv"])
     ] + [
         "rvv_widen_{}_{}_{}.elf".format(op, in_dtype, out_dtype)
         for (op, _, in_dtype, out_dtype, _, _, _, _) in MATH_WIDEN_OP_TYPE_PAIRS
@@ -488,7 +1434,7 @@ filegroup(
         "vnclipu_test.elf",
         "vnsra_test.elf",
         "vnsrl_test.elf",
-        ":rvv_same_type_binary_vx_cases",
         ":rvv_mixed_sign_same_width_type_binary_vx_cases",
+        ":rvv_same_type_binary_vx_cases",
     ],
 )

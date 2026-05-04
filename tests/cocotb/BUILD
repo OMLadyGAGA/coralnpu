@@ -299,6 +299,7 @@ RVV_ARITHMETIC_TESTCASES = [
     "reduction_m1_failure_ops",
     "widen_math_ops_test_impl",
     "vnclip_test",
+    "vnclip_vxsat_test",
     "vnclipu_test",
     "vnsra_test",
     "vnsrl_test",
@@ -310,6 +311,9 @@ RVV_ARITHMETIC_TESTCASES = [
     "widen_wide_math_ops_test",
     "extension_op_test",
     "immediate_op_test",
+    "float_comparison_op",
+    "float_misc_op",
+    "float_convert_op",
     ("binary_op_vx", "large"),
 ]
 # END_TESTCASES_FOR_rvv_arithmetic_cocotb_test
@@ -653,7 +657,9 @@ cocotb_test_suite(
             "@bazel_tools//tools/python/runfiles",
             requirement("tqdm"),
         ],
-        "data": ["//tests/cocotb/rvv/arithmetics:rvv_arith_tests"],
+        "data": [
+            "//tests/cocotb/rvv/arithmetics:rvv_arith_tests",
+        ],
         "default_testcase_size": "medium",
         "size": "large",
     },
