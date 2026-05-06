@@ -147,3 +147,11 @@ def rvv_core_mini_axi_netlist_test_suite(
         vcs_netlist_verilog_sources = vcs_verilog_sources,
         **kwargs
     )
+
+def rvv_core_mini_axi_netlist_static_test_suite(name, static_netlist, **kwargs):
+    """Wrapper macro to run netlist tests using a static netlist file."""
+    rvv_core_mini_axi_netlist_test_suite(
+        name = name,
+        vcs_verilog_sources = [static_netlist],
+        **kwargs
+    )

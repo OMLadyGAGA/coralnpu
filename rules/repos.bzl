@@ -134,6 +134,8 @@ def coralnpu_repos2():
             "@coralnpu_hw//third_party/rules_hdl:0008-Use-glob-for-verilator_bin-data-files.patch",
             "@coralnpu_hw//third_party/rules_hdl:0009-Suppress-Verilator-C-warnings.patch",
             "@coralnpu_hw//third_party/rules_hdl:0010-Fix-ParseDict-to-handle-space-separated-lists.patch",
+            "@coralnpu_hw//third_party/rules_hdl:0011-Support-location-expansion-in-build-args.patch",
+            "@coralnpu_hw//third_party/rules_hdl:0012-Fix-runfiles-collection-for-direct-files.patch",
         ],
         patch_args = ["-p1"],
     )

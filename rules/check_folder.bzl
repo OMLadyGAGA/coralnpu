@@ -1,4 +1,4 @@
-# Copyright 2025 Google LLC
+# Copyright 2026 Google LLC
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -18,17 +18,28 @@ def _check_folder_impl(rctx):
     folder = workspace_root.get_child(rctx.attr.directory)
     folder_exists = folder.exists
 
-    bzl_content = "FOLDER_EXISTS = %s\n" % folder_exists
-    rctx.file(
-        "status.bzl",
-        content = bzl_content,
-    )
-    rctx.file(
-        "BUILD.bazel",
-        content = """
-exports_files(["status.bzl"])
-""",
-    )
+    # Watch the path to automatically invalidate the repository cache if it changes
+    if hasattr(rctx, "watch"):
+        rctx.watch(folder)
+
+    # Status file
+    rctx.file("status.bzl", content = "FOLDER_EXISTS = %s\n" % folder_exists)
+
+    # Generate conditional repositories.bzl inside @internal_check
+    if folder_exists:
+        repo_content = """
+load("@coralnpu_hw//internal:repositories.bzl", _real = "synthesis_internal_repo")
+def synthesis_internal_repo():
+    _real()
+"""
+    else:
+        repo_content = """
+def synthesis_internal_repo():
+    pass
+"""
+
+    rctx.file("repositories.bzl", content = repo_content)
+    rctx.file("BUILD.bazel", content = "exports_files(['status.bzl', 'repositories.bzl'])\n")
 
 check_folder = repository_rule(
     implementation = _check_folder_impl,

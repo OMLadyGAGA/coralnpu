@@ -1,4 +1,4 @@
-# Copyright 2025 Google LLC
+# Copyright 2026 Google LLC
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -398,6 +398,7 @@ def vcs_cocotb_test(
         test_module,
         deps = [],
         data = [],
+        verilog_model_files = [],
         **kwargs):
     """Runs a cocotb test with a vcs model.
 
@@ -410,6 +411,7 @@ def vcs_cocotb_test(
         test_module: The python module that contains the test.
         deps: Additional dependencies for the test.
         data: Data dependencies for the test.
+        verilog_model_files: Labels of Verilog model files to pass to VCS with -v.
         **kwargs: Additional arguments to pass to the cocotb_test rule.
     """
     tags = list(kwargs.pop("tags", []))
@@ -422,7 +424,8 @@ def vcs_cocotb_test(
         tags = tags,
     )
 
-    # Wrap in py_library so we can forward data
+    # Wrap in py_library to forward data.
+    # Pass 'verilog_model_files' to 'data' as simulator runtime deps, not Python libs.
     py_library(
         name = name + "_test_data",
         srcs = [],
@@ -438,6 +441,17 @@ def vcs_cocotb_test(
     extra_env.append("COCOTB_TEST_FILTER=$TESTBRIDGE_TEST_ONLY")
     kwargs["extra_env"] = extra_env
 
+    # Resolve labels to paths and prefix with -v for VCS.
+    # Prepend '../' because Cocotb runs from 'sim_build/', so we must go up one level to reach the execution root.
+    build_args = list(kwargs.pop("build_args", []))
+    for f in verilog_model_files:
+        # Note that $(rootpath) expands to a space-separated list if the label contains multiple files.
+        # VCS expects a separate -v flag for each file. This implementation assumes each entry in
+        # verilog_model_files is a single-file label. If filegroups are needed, the expansion logic
+        # should probably be moved into the cocotb_test rule implementation in rules_hdl.
+        build_args.extend(["-v", "../$(rootpath {})".format(f)])
+    kwargs["build_args"] = build_args
+
     cocotb_test(
         name = name,
         hdl_toplevel = hdl_toplevel,
@@ -445,6 +459,10 @@ def vcs_cocotb_test(
         deps = [
             ":{}_test_data".format(name),
         ],
+        # The 'data' dependencies are now being passed both to the py_library (test_data) and directly to
+        # cocotb_test. While this works, it's redundant. Since Patch 0011 adds data support to cocotb_test,
+        # we should eventually consolidate data handling there.
+        data = data + verilog_model_files,
         **kwargs
     )
 
@@ -585,7 +603,7 @@ def cocotb_test_suite(name, testcases, simulators = ["verilator"], **kwargs):
                     if best_match == None or len(s) > len(best_match):
                         best_match = s
             if best_match == sim:
-                sim_tests_kwargs[key.replace(sim + "_", "")] = value
+                sim_tests_kwargs[key.replace(sim + "_", "", 1)] = value
 
         for key, value in kwargs.items():
             best_match = None
@@ -594,7 +612,7 @@ def cocotb_test_suite(name, testcases, simulators = ["verilator"], **kwargs):
                     if best_match == None or len(s) > len(best_match):
                         best_match = s
             if best_match == sim:
-                sim_kwargs[key.replace(sim + "_", "")] = value
+                sim_kwargs[key.replace(sim + "_", "", 1)] = value
 
         if sim == "verilator":
             model = sim_kwargs.pop("model", None)

@@ -1,4 +1,4 @@
-# Copyright 2025 Google LLC
+# Copyright 2026 Google LLC
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -223,10 +223,10 @@ check_folder(
     directory = "internal",
     root_file = "//:BUILD.bazel",
 )
-local_repository(
-    name = "synthesis_internal",
-    path = "../synthesis_internal",
-)
+
+load("@internal_check//:repositories.bzl", "synthesis_internal_repo")
+
+synthesis_internal_repo()
 
 local_repository(
     name = "netlist_test",
