@@ -934,6 +934,71 @@ async def vnclip_test(dut):
             make_test_case('vnclip_wx_i8m4', 63, np.int16, vxs=True),
         ],
     )
+@cocotb.test()
+async def vnclipu_test(dut):
+    """Test vnclipu usage accessible from intrinsics."""
+    def make_test_case(impl, vl, in_dtype, vxs):
+        if in_dtype == np.uint16:
+            maxshift = 15
+        elif in_dtype == np.uint32:
+            maxshift = 31
+        else:
+            assert False, "Unsupported in_dtype"
+        return {
+            'impl': impl,
+            'vl': vl,
+            'in_dtype': in_dtype,
+            'maxshift': maxshift,
+            'vxs': vxs,
+            'saturate': True,
+        }
+
+    await test_narrowing_math_op(
+        dut = dut,
+        elf_name = 'vnclipu_test.elf',
+        cases = [
+            # 32 to 16, vxv
+            make_test_case('vnclipu_wv_u16mf2', 4, np.uint32, vxs=False),
+            make_test_case('vnclipu_wv_u16mf2', 3, np.uint32, vxs=False),
+            make_test_case('vnclipu_wv_u16m1', 8, np.uint32, vxs=False),
+            make_test_case('vnclipu_wv_u16m1', 7, np.uint32, vxs=False),
+            make_test_case('vnclipu_wv_u16m2', 16, np.uint32, vxs=False),
+            make_test_case('vnclipu_wv_u16m2', 15, np.uint32, vxs=False),
+            make_test_case('vnclipu_wv_u16m4', 32, np.uint32, vxs=False),
+            make_test_case('vnclipu_wv_u16m4', 31, np.uint32, vxs=False),
+            # 32 to 16, vxs
+            make_test_case('vnclipu_wx_u16mf2', 4, np.uint32, vxs=True),
+            make_test_case('vnclipu_wx_u16mf2', 3, np.uint32, vxs=True),
+            make_test_case('vnclipu_wx_u16m1', 8, np.uint32, vxs=True),
+            make_test_case('vnclipu_wx_u16m1', 7, np.uint32, vxs=True),
+            make_test_case('vnclipu_wx_u16m2', 16, np.uint32, vxs=True),
+            make_test_case('vnclipu_wx_u16m2', 15, np.uint32, vxs=True),
+            make_test_case('vnclipu_wx_u16m4', 32, np.uint32, vxs=True),
+            make_test_case('vnclipu_wx_u16m4', 31, np.uint32, vxs=True),
+            # 16 to 8, vxv
+            make_test_case('vnclipu_wv_u8mf4', 4, np.uint16, vxs=False),
+            make_test_case('vnclipu_wv_u8mf4', 3, np.uint16, vxs=False),
+            make_test_case('vnclipu_wv_u8mf2', 8, np.uint16, vxs=False),
+            make_test_case('vnclipu_wv_u8mf2', 7, np.uint16, vxs=False),
+            make_test_case('vnclipu_wv_u8m1', 16, np.uint16, vxs=False),
+            make_test_case('vnclipu_wv_u8m1', 15, np.uint16, vxs=False),
+            make_test_case('vnclipu_wv_u8m2', 32, np.uint16, vxs=False),
+            make_test_case('vnclipu_wv_u8m2', 31, np.uint16, vxs=False),
+            make_test_case('vnclipu_wv_u8m4', 64, np.uint16, vxs=False),
+            make_test_case('vnclipu_wv_u8m4', 63, np.uint16, vxs=False),
+            # 16 to 8, vxs
+            make_test_case('vnclipu_wx_u8mf4', 4, np.uint16, vxs=True),
+            make_test_case('vnclipu_wx_u8mf4', 3, np.uint16, vxs=True),
+            make_test_case('vnclipu_wx_u8mf2', 8, np.uint16, vxs=True),
+            make_test_case('vnclipu_wx_u8mf2', 7, np.uint16, vxs=True),
+            make_test_case('vnclipu_wx_u8m1', 16, np.uint16, vxs=True),
+            make_test_case('vnclipu_wx_u8m1', 15, np.uint16, vxs=True),
+            make_test_case('vnclipu_wx_u8m2', 32, np.uint16, vxs=True),
+            make_test_case('vnclipu_wx_u8m2', 31, np.uint16, vxs=True),
+            make_test_case('vnclipu_wx_u8m4', 64, np.uint16, vxs=True),
+            make_test_case('vnclipu_wx_u8m4', 63, np.uint16, vxs=True),
+        ],
+    )
 
 
 @cocotb.test()
