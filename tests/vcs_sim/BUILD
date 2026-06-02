@@ -33,7 +33,7 @@ template_rule(
             "build_args": ["+define+DUT_MODULE=CoreMiniHighmemAxi"],
         },
         "core_mini_itcm512kb_dtcm512kb_axi_sim": {
-            "verilog_deps": ["//hdl/chisel/src/coralnpu:core_mini_itcm512kb_dtcm512kb_axi_verilog"],
+            "verilog_deps": ["//hdl/chisel/src/coralnpu:core_mini_itcm512kb_dtcm512kb_axi_cc_library_verilog"],
             "build_args": ["+define+DUT_MODULE=CoreMini_ITCM512KB_DTCM512KBAxi"],
         },
         "rvv_core_mini_axi_sim": {
