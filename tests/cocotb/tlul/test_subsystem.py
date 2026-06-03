@@ -31,12 +31,58 @@ BUS_WIDTH_BYTES = 16
 
 async def setup_dut(dut, boot_addr=0):
     """Common setup logic for all tests."""
-    # Default all TL-UL input signals to a safe state
-    for dev in ["rom", "uart0", "uart1", "i2c_master"]:
-        getattr(dut, f"io_external_devices_{dev}_d_valid").value = 0
+    for signal in dir(dut):
+        if signal.startswith("io_external_devices_"):
+            if "_d_" in signal or "_a_ready" in signal:
+                try:
+                    getattr(dut, signal).value = 0
+                except Exception:
+                    pass
+        elif signal.startswith("io_external_hosts_"):
+            if "_a_" in signal or "_d_ready" in signal:
+                try:
+                    getattr(dut, signal).value = 0
+                except Exception:
+                    pass
 
-    getattr(dut, f"io_external_ports_dm_req_valid").value = 0 # DM req valid
-    getattr(dut, f"io_external_ports_dm_rsp_ready").value = 0 # DM rsp ready
+    # Initialize all async ports to 0 (clocks) or 1 (resets) except the test host domain
+    for signal in dir(dut):
+        if signal.startswith("io_async_ports_") and "hosts_test" not in signal:
+            try:
+                if "clock" in signal or "clk" in signal:
+                    getattr(dut, signal).value = 0
+                elif "reset" in signal or "rst" in signal:
+                    getattr(dut, signal).value = 1
+            except Exception:
+                pass
+
+    # Initialize input external ports to 0
+    input_external_ports = {
+        "io_external_ports_te",
+        "io_external_ports_dm_req_valid",
+        "io_external_ports_dm_req_bits_address",
+        "io_external_ports_dm_req_bits_data",
+        "io_external_ports_dm_req_bits_op",
+        "io_external_ports_dm_rsp_ready",
+        "io_external_ports_spi_clk",
+        "io_external_ports_spi_mosi",
+        "io_external_ports_spim_miso",
+        "io_external_ports_spim_clk_i",
+        "io_external_ports_gpio_i",
+        "io_external_ports_spim_flash_miso",
+        "io_external_ports_spim_flash_clk_i",
+        "io_external_ports_ext_intrs",
+    }
+    for signal in input_external_ports:
+        try:
+            getattr(dut, signal).value = 0
+        except Exception:
+            pass
+
+    # Initialize active-low chip select to 1
+    if hasattr(dut, "io_external_ports_spi_csb"):
+        dut.io_external_ports_spi_csb.value = 1
+
     dut.io_external_ports_boot_addr.value = boot_addr
 
     # Start the main clock
@@ -217,7 +263,7 @@ async def write_word_via_spi(spi_master, address, data):
 @cocotb.test()
 async def test_tlul_passthrough(dut):
     """Drives a TL-UL transaction through an external host and device port."""
-    clock = await setup_dut(dut)
+    await setup_dut(dut)
 
     # Instantiate a TL-UL host to drive the first external host port (ibex_core_i)
     host_if = TileLinkULInterface(
@@ -233,6 +279,7 @@ async def test_tlul_passthrough(dut):
         device_if_name="io_external_devices_rom",
         clock_name="io_clk_i",
         reset_name="io_rst_ni",
+        reset_active_low=True,
         width=32)
 
     # Initialize the interfaces
@@ -294,7 +341,7 @@ async def test_program_execution_via_host(dut):
     test for `load_elf_tlul_host`. Other tests in this file silently use
     the backdoor default.
     """
-    clock = await setup_dut(dut)
+    await setup_dut(dut)
 
     # Instantiate a TL-UL host
     host_if = TileLinkULInterface(
@@ -380,7 +427,7 @@ async def test_program_execution_via_host(dut):
 @cocotb.test()
 async def test_program_execution_via_spi(dut):
     """Loads and executes a program via the SPI to TL-UL bridge."""
-    clock = await setup_dut(dut)
+    await setup_dut(dut)
 
     spi_master = SPIMaster(
         clk=dut.io_external_ports_spi_clk,
@@ -510,7 +557,7 @@ async def test_ddr_access(dut):
 
 @cocotb.test()
 async def test_ddr_access_via_spi(dut):
-    clock = await setup_dut(dut)
+    await setup_dut(dut)
 
     spi_master = SPIMaster(
         clk=dut.io_external_ports_spi_clk,
@@ -561,7 +608,7 @@ async def test_ddr_access_via_spi(dut):
 @cocotb.test()
 async def test_tlul_width_bridge_bug_reproduction(dut):
     """Reproduces the TlulWidthBridge bug by running a C++ program that performs 16-bit writes."""
-    clock = await setup_dut(dut)
+    await setup_dut(dut)
 
     # 1. Instantiate Host Interface (test_host_32)
     host_if = TileLinkULInterface(
@@ -572,13 +619,13 @@ async def test_tlul_width_bridge_bug_reproduction(dut):
         width=32)
     await host_if.init()
 
-    # 2. Instantiate Device Interfaces
     # UART1 responder (port 3) for logging
     uart1_if = TileLinkULInterface(
         dut,
         device_if_name="io_external_devices_uart1",
         clock_name="io_clk_i",
         reset_name="io_rst_ni",
+        reset_active_low=True,
         width=32,
     )
     await uart1_if.init()
@@ -664,7 +711,7 @@ async def test_tlul_width_bridge_bug_reproduction(dut):
 async def test_timer_interrupt(dut):
     """Loads and executes the timer interrupt test. Verifies CLINT mtime/mtimecmp
     triggers a machine timer interrupt that is handled via mtvec."""
-    clock = await setup_dut(dut)
+    await setup_dut(dut)
 
     host_if = TileLinkULInterface(
         dut,
@@ -745,7 +792,7 @@ async def test_timer_interrupt(dut):
 async def test_software_interrupt(dut):
     """Loads and executes the software interrupt test. Verifies CLINT msip
     triggers a machine software interrupt that is handled via mtvec."""
-    clock = await setup_dut(dut)
+    await setup_dut(dut)
 
     host_if = TileLinkULInterface(
         dut,
@@ -819,7 +866,7 @@ async def test_software_interrupt(dut):
 async def test_plic(dut):
     """Loads and executes the PLIC test. Verifies PLIC can handle both level
     and edge triggered interrupts."""
-    clock = await setup_dut(dut)
+    await setup_dut(dut)
 
     host_if = TileLinkULInterface(
         dut,
@@ -835,6 +882,7 @@ async def test_plic(dut):
         device_if_name="io_external_devices_uart1",
         clock_name="io_clk_i",
         reset_name="io_rst_ni",
+        reset_active_low=True,
         width=32,
     )
     await uart1_if.init()
@@ -930,7 +978,7 @@ async def test_ibus_fetch_from_sram(dut):
     to that address, and verifies the core can fetch and execute instructions
     via the ibus AXI path through the crossbar.
     """
-    clock = await setup_dut(dut)
+    await setup_dut(dut)
 
     # Host interface for programming CSRs and loading data
     host_if = TileLinkULInterface(
@@ -1051,7 +1099,7 @@ async def test_boot_addr_sram(dut):
     DTCM_BASE = 0x00010000
 
     # Pass boot_addr to setup_dut so it's driven before reset
-    clock = await setup_dut(dut, boot_addr=SRAM_BASE)
+    await setup_dut(dut, boot_addr=SRAM_BASE)
 
     host_if = TileLinkULInterface(
         dut,
@@ -1145,7 +1193,7 @@ async def test_boot_addr_override(dut):
     DUMMY_ADDR = 0x12340000
 
     # Pass dummy boot_addr to setup_dut so it's captured on reset
-    clock = await setup_dut(dut, boot_addr=DUMMY_ADDR)
+    await setup_dut(dut, boot_addr=DUMMY_ADDR)
 
     host_if = TileLinkULInterface(
         dut,
@@ -1238,7 +1286,7 @@ async def test_boot_addr_override(dut):
 @cocotb.test()
 async def test_ddr_burst_pattern_repro(dut):
     """Tests DDR burst patterns from the CPU's perspective."""
-    clock = await setup_dut(dut)
+    await setup_dut(dut)
 
     # 1. DDR Clock and Reset Setup
     ddr_clk_signal = dut.io_async_ports_devices_ddr_clock

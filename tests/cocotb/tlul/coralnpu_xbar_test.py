@@ -39,13 +39,49 @@ TIMEOUT_CYCLES = 500
 # --- Test Setup ---
 async def setup_dut(dut):
     """Common setup logic for all tests."""
+    # Initialize async ports to prevent X-propagation before starting clocks
+    for signal in dir(dut):
+        if signal.startswith("io_async_ports_"):
+            try:
+                if "clock" in signal or "clk" in signal:
+                    getattr(dut, signal).value = 0
+                elif "reset" in signal or "rst" in signal:
+                    getattr(dut, signal).value = 1
+            except Exception:
+                pass
+
     # Start the main clock
-    clock = Clock(dut.clock, 6)
+    clock = Clock(dut.clock, 6, "ns")
     cocotb.start_soon(clock.start())
 
     # Start the asynchronous test clock
-    test_clock = Clock(dut.io_async_ports_hosts_test_clock, 10)
+    test_clock = Clock(dut.io_async_ports_hosts_test_clock, 10, "ns")
     cocotb.start_soon(test_clock.start())
+
+    # Initialize unused hosts to prevent X-propagation
+    unused_hosts = ["dma", "ispyocto_m1", "ispyocto_m2", "autoboot"]
+    for name in unused_hosts:
+        prefix = f"io_hosts_{name}"
+        for signal in dir(dut):
+            if signal.startswith(prefix + "_a_") or signal == f"{prefix}_d_ready":
+                try:
+                    getattr(dut, signal).value = 0
+                except Exception:
+                    pass
+
+    # Initialize unused devices to prevent X-propagation
+    unused_devices = [
+        "clk_table", "spi_master", "gpio", "clint", "plic", "i2c_master",
+        "dma", "spi_master_flash", "ispyocto_ctrl", "ddr_ctrl", "ddr_mem"
+    ]
+    for name in unused_devices:
+        prefix = f"io_devices_{name}"
+        for signal in dir(dut):
+            if signal.startswith(prefix + "_d_") or signal == f"{prefix}_a_ready":
+                try:
+                    getattr(dut, signal).value = 0
+                except Exception:
+                    pass
 
     # Create a dictionary of TileLink interfaces for all hosts and devices
     host_widths = {"coralnpu_core": 128, "spi2tlul": 128, "test_host_32": 32}

@@ -15,6 +15,7 @@
 """Convenience wrapper for Verilator driven cocotb."""
 
 load("@coralnpu_host_cpus//:defs.bzl", "MAKE_JOBS")
+load("@coralnpu_hw//rules:sram_backdoor.bzl", "SRAM_BACKDOOR_TOPLEVELS")
 load("@coralnpu_hw//rules:verilog.bzl", "collect_verilog_files")
 load("@coralnpu_hw//third_party/python:requirements.bzl", "requirement")
 load("@rules_cc//cc:find_cc_toolchain.bzl", "find_cc_toolchain")
@@ -251,7 +252,6 @@ def _vcs_cocotb_model_impl(ctx):
 
     vcs_opts = [
         "-full64",
-        "-debug_access+all",
         "+acc+3",
         "-sverilog",
         "-LDFLAGS",
@@ -642,6 +642,8 @@ def _vcs_cocotb_test_suite(
             tags = list(tc_tests_kwargs.pop("tags", []))
             if add_ci_tags:
                 tags.append("vcs_cocotb_single_test")
+            if testcases_vname:
+                tags.append("testcases_vname={}".format(testcases_vname))
 
             test_args = tc_tests_kwargs.pop("test_args", [""])
 
@@ -670,6 +672,8 @@ def _vcs_cocotb_test_suite(
     tags.append("manual")
     if add_ci_tags:
         tags.append("vcs_cocotb_test_suite")
+    if testcases_vname:
+        tags.append("testcases_vname={}".format(testcases_vname))
 
     # Also handle the meta-target FSDB naming
     if name_fsdb_after_test:
@@ -686,7 +690,7 @@ def _vcs_cocotb_test_suite(
         **meta_target_kwargs
     )
 
-def cocotb_test_suite(name, testcases, simulators = ["verilator"], **kwargs):
+def cocotb_test_suite(name, testcases, simulators = ["verilator"], coverage = False, coverage_cfg = None, debug_access = False, **kwargs):
     """Runs a cocotb test with a verilator or vcs model.
 
     This is a wrapper around the cocotb_test rule that is specific to
@@ -747,6 +751,43 @@ def cocotb_test_suite(name, testcases, simulators = ["verilator"], **kwargs):
             if best_match == sim:
                 sim_kwargs[key.replace(sim + "_", "", 1)] = value
 
+        if coverage and sim in ["vcs", "vcs_netlist"]:
+            build_args = list(sim_kwargs.get("build_args", []))
+            if "-cm" not in build_args:
+                build_args.extend([
+                    "-cm",
+                    "line+cond+tgl+branch+assert",
+                ])
+                if coverage_cfg:
+                    build_args.extend([
+                        "-cm_hier",
+                        "../$(rootpath {})".format(coverage_cfg),
+                    ])
+            sim_kwargs["build_args"] = build_args
+
+            test_args = list(sim_tests_kwargs.get("test_args", sim_kwargs.get("test_args", [])))
+            if "-cm" not in test_args:
+                test_args.extend([
+                    "-cm",
+                    "line+cond+tgl+branch+assert",
+                ])
+            sim_tests_kwargs["test_args"] = test_args
+
+            if coverage_cfg:
+                data = list(sim_kwargs.get("data", []))
+                if coverage_cfg not in data:
+                    data.append(coverage_cfg)
+                sim_kwargs["data"] = data
+
+        if sim in ["vcs", "vcs_netlist"]:
+            build_args = list(sim_kwargs.get("build_args", []))
+            if debug_access:
+                if "-debug_access+all" not in build_args:
+                    build_args.append("-debug_access+all")
+            elif "-debug_access+r+w+wn+f+fn+cbk" not in build_args:
+                build_args.append("-debug_access+r+w+wn+f+fn+cbk")
+            sim_kwargs["build_args"] = build_args
+
         if sim == "verilator":
             model = sim_kwargs.pop("model", None)
             if not model:
@@ -777,6 +818,28 @@ def cocotb_test_suite(name, testcases, simulators = ["verilator"], **kwargs):
             verilog_sources = sim_kwargs.pop("verilog_sources", [])
             if not verilog_sources:
                 fail("vcs_verilog_sources must be specified for vcs tests")
+
+            # CoreMiniAxi and Chisel Subsystem tests require sram_backdoor compilation
+            hdl_toplevel = sim_tests_kwargs.get("hdl_toplevel", sim_kwargs.get("hdl_toplevel", ""))
+            if hdl_toplevel in SRAM_BACKDOOR_TOPLEVELS:
+                build_args = list(sim_kwargs.pop("build_args", []))
+                if "-I../hdl/verilog" not in build_args:
+                    build_args.extend(["-CFLAGS", "-I../hdl/verilog"])
+
+                if "../hdl/verilog/sram_backdoor.cc" not in build_args:
+                    build_args.append("../hdl/verilog/sram_backdoor.cc")
+                sim_kwargs["build_args"] = build_args
+
+                data = list(sim_kwargs.pop("data", []))
+                has_dpi_files = False
+                for item in data:
+                    if str(item).endswith("hdl/verilog:dpi_files"):
+                        has_dpi_files = True
+                        break
+                if not has_dpi_files:
+                    data.append("@coralnpu_hw//hdl/verilog:dpi_files")
+                sim_kwargs["data"] = data
+
             _vcs_cocotb_test_suite(
                 name = "{}_{}".format(sim, name),
                 verilog_sources = verilog_sources,

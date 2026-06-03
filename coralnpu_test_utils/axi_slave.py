@@ -49,7 +49,7 @@ class AxiSlave:
             ardata = await self.ar_queue.get()
             if self.has_memory:
                 addr = ardata["addr"] - self.mem_base_addr
-                bus_bytes = len(getattr(self.dut, f'io_{self.name}_read_data_bits_data').value.to_bytes(byteorder="big"))
+                bus_bytes = len(getattr(self.dut, f'io_{self.name}_read_data_bits_data')) // 8
                 aligned_addr = (addr // bus_bytes) * bus_bytes
                 read_bytes = bytearray()
                 for i in range(bus_bytes):

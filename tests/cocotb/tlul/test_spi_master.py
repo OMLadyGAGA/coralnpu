@@ -32,6 +32,32 @@ SPI_REG_CSMODE = SPI_MASTER_BASE + 0x14
 
 async def setup_dut(dut):
     """Common setup logic."""
+    for signal in dir(dut):
+        if signal.startswith("io_external_devices_"):
+            if "_d_" in signal or "_a_ready" in signal:
+                try:
+                    getattr(dut, signal).value = 0
+                except AttributeError:
+                    pass
+        elif signal.startswith("io_external_hosts_"):
+            if "_a_" in signal or "_d_ready" in signal:
+                try:
+                    getattr(dut, signal).value = 0
+                except AttributeError:
+                    pass
+        elif signal.startswith("io_async_ports_"):
+            # Initialize async clocks to 0, resets to 1 (active-high reset)
+            if "clock" in signal:
+                try:
+                    getattr(dut, signal).value = 0
+                except AttributeError:
+                    pass
+            elif "reset" in signal:
+                try:
+                    getattr(dut, signal).value = 1
+                except AttributeError:
+                    pass
+
     # Start the main clock
     clock = Clock(dut.io_clk_i, 10, "ns")
     cocotb.start_soon(clock.start())
@@ -48,7 +74,7 @@ async def setup_dut(dut):
     # Reset the DUT
     dut.io_rst_ni.value = 0
     dut.io_async_ports_hosts_test_reset.value = 1
-    await ClockCycles(dut.io_clk_i, 5)
+    await ClockCycles(dut.io_clk_i, 100)
     dut.io_rst_ni.value = 1
     dut.io_async_ports_hosts_test_reset.value = 0
     await ClockCycles(dut.io_clk_i, 20)

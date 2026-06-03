@@ -57,7 +57,6 @@ cocotb_test_suite(
     vcs_build_args = VCS_BUILD_ARGS,
     vcs_data = [
         ":coralnpu_v2_program",
-        "//tests/cocotb:coverage_exclude.cfg",
         "//hdl/verilog:dpi_files",
     ],
     vcs_defines = VCS_DEFINES,
@@ -89,7 +88,6 @@ cocotb_test_suite(
     vcs_build_args = VCS_BUILD_ARGS,
     vcs_data = [
         "//examples:coralnpu_v2_hello_world_add_floats.elf",
-        "//tests/cocotb:coverage_exclude.cfg",
         "//hdl/verilog:dpi_files",
     ],
 

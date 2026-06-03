@@ -25,7 +25,6 @@ load(
 )
 
 VCS_COMMON_DATA = [
-    "//tests/cocotb:coverage_exclude.cfg",
     "//hdl/verilog:dpi_files",
 ]
 

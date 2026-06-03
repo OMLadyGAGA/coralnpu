@@ -81,10 +81,12 @@ class TileLinkULInterface:
                  device_if_name=None,
                  clock_name="clock",
                  reset_name="reset",
+                 reset_active_low=False,
                  width=32):
         self.dut = dut
         self.clock = getattr(dut, clock_name)
         self.reset = getattr(dut, reset_name)
+        self.reset_active_low = reset_active_low
         self.width = width
         self.name = host_if_name or device_if_name
 
@@ -180,10 +182,17 @@ class TileLinkULInterface:
 
                     await self.host_d_fifo.put(txn)
             except Exception as e:
-                x_count += 1
-                self.dut._log.warning(f"X seen in _host_d_monitor ({prefix}): {e} ({x_count}/3)")
-                if x_count >= 3:
-                    assert False, f"Too many 'X' values detected in _host_d_monitor on {prefix}"
+                try:
+                    is_reset = (self.reset.value == 0) if self.reset_active_low else (self.reset.value == 1)
+                except Exception:
+                    is_reset = True
+                if is_reset:
+                    x_count = 0
+                else:
+                    x_count += 1
+                    self.dut._log.warning(f"X seen in _host_d_monitor ({prefix}): {e} ({x_count}/3)")
+                    if x_count >= 3:
+                        assert False, f"Too many 'X' values detected in _host_d_monitor on {prefix}"
 
     # master_aragent
     async def _device_a_monitor(self, prefix):
@@ -208,10 +217,17 @@ class TileLinkULInterface:
                                                          signal_name).value
                     await self.device_a_fifo.put(txn)
             except Exception as e:
-                x_count += 1
-                self.dut._log.warning(f"X seen in _device_a_monitor ({prefix}): {e} ({x_count}/3)")
-                if x_count >= 3:
-                    assert False, f"Too many 'X' values detected in _device_a_monitor on {prefix}"
+                try:
+                    is_reset = (self.reset.value == 0) if self.reset_active_low else (self.reset.value == 1)
+                except Exception:
+                    is_reset = True
+                if is_reset:
+                    x_count = 0
+                else:
+                    x_count += 1
+                    self.dut._log.warning(f"X seen in _device_a_monitor ({prefix}): {e} ({x_count}/3)")
+                    if x_count >= 3:
+                        assert False, f"Too many 'X' values detected in _device_a_monitor on {prefix}"
 
     # master_bagent
     async def _device_d_driver(self, prefix, timeout=4096):

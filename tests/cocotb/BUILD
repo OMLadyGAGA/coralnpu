@@ -49,9 +49,8 @@ COCOTB_TEST_BINARY_TARGETS = glob(["**/*.elf"]) + glob(["**/*.o"]) + [
 ]
 
 VCS_COMMON_DATA = [
-    ":coverage_exclude.cfg",
     ":xprop.cfg",
-    "//hdl/verilog:dpi_files",
+    "@coralnpu_hw//hdl/verilog:dpi_files",
 ]
 
 verilator_cocotb_model(
