@@ -15,13 +15,13 @@
 """Convenience wrapper for Verilator driven cocotb."""
 
 load("@coralnpu_host_cpus//:defs.bzl", "MAKE_JOBS")
+load("@coralnpu_hw//rules:verilog.bzl", "collect_verilog_files")
 load("@coralnpu_hw//third_party/python:requirements.bzl", "requirement")
 load("@rules_cc//cc:find_cc_toolchain.bzl", "find_cc_toolchain")
 load("@rules_cc//cc/common:cc_info.bzl", "CcInfo")
 load("@rules_hdl//cocotb:cocotb.bzl", "cocotb_test")
 load("@rules_hdl//verilog:providers.bzl", "VerilogInfo")
 load("@rules_python//python:defs.bzl", "py_library")
-load("@coralnpu_hw//rules:verilog.bzl", "collect_verilog_files")
 
 # Number of CPUs reserved per Verilate action in Bazel's local scheduler.
 # Sourced from `nproc` at workspace-fetch time so we don't oversubscribe
@@ -221,7 +221,6 @@ def _verilator_cocotb_model_impl(ctx):
         ),
     ]
 
-
 def _vcs_cocotb_model_impl(ctx):
     hdl_toplevel = ctx.attr.hdl_toplevel
     outdir_name = ctx.attr.name + "_vcs_build"
@@ -255,9 +254,10 @@ def _vcs_cocotb_model_impl(ctx):
         "-debug_access+all",
         "+acc+3",
         "-sverilog",
-        "-LDFLAGS", "-Wl,--no-as-needed",
+        "-LDFLAGS",
+        "-Wl,--no-as-needed",
         "-q",
-        "-suppress=VPI-CT-NS,SV-LCM-PPWI"
+        "-suppress=VPI-CT-NS,SV-LCM-PPWI",
     ]
 
     load_arg = "-load {}:vlog_startup_routines_bootstrap".format(vcs_lib.basename)
@@ -291,15 +291,15 @@ def _vcs_cocotb_model_impl(ctx):
         inputs = depset(inputs),
         command = "bash {}".format(wrapper.path),
         mnemonic = "VcsCompile",
-        use_default_shell_env = True
+        use_default_shell_env = True,
     )
 
     return [
         DefaultInfo(
             files = depset([output_simv]),
             runfiles = ctx.runfiles(files = [output_simv, output_daidir, output_vdb]),
-            executable = output_simv
-        )
+            executable = output_simv,
+        ),
     ]
 
 vcs_cocotb_model = rule(
@@ -612,11 +612,14 @@ def _vcs_cocotb_test_suite(
 
     if not model:
         model = name + "_vcs_model"
+        model_build_args = list(kwargs.get("build_args", []))
+        for f in kwargs.get("verilog_model_files", []):
+            model_build_args.extend(["-v", "../$(rootpath {})".format(f)])
         vcs_cocotb_model(
             name = model,
             verilog_sources = verilog_sources,
             hdl_toplevel = hdl_toplevel,
-            build_args = kwargs.get("build_args", []),
+            build_args = model_build_args,
             defines = kwargs.get("defines", {}),
             includes = kwargs.get("includes", []),
             parameters = kwargs.get("parameters", {}),
