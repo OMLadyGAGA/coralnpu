@@ -210,7 +210,7 @@ class TileLinkULInterface:
         while True:
             await RisingEdge(self.clock)
             try:
-                if a_valid.value:
+                if a_valid.value and a_ready.value == 1:
                     txn = {"user": {}}
                     for prop in ["opcode", "param", "size", "source", "address", "mask", "data"]:
                         txn[prop] = getattr(self.dut, f"{prefix}_a_bits_{prop}").value

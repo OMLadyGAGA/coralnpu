@@ -25,6 +25,17 @@ py_library(
 )
 
 py_library(
+    name = "TlulVerificationEnv",
+    srcs = ["TlulVerificationEnv.py"],
+    deps = [
+        requirement("cocotb"),
+        ":TileLinkULInterface",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+
+py_library(
     name = "rvv_type_util",
     srcs = ["rvv_type_util.py"],
     deps = [
