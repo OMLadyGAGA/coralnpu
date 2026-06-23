@@ -7,7 +7,7 @@
 # Run command:
 # docker run -it coralnpu /bin/bash
 
-FROM debian:bookworm AS base
+FROM debian:trixie AS base
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV TZ=UTC
@@ -17,6 +17,7 @@ ARG _USERNAME=builder
 ENV HOME=/home/${_USERNAME}
 
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked --mount=type=cache,target=/var/lib/apt,sharing=locked <<EOF
+    set -eux -o pipefail
     ln -snf "/usr/share/zoneinfo/${TZ}" /etc/localtime
     echo "${TZ}" > /etc/timezone
     echo "APT::Get::Assume-Yes \"true\";" > /etc/apt/apt.conf.d/90assumeyes
@@ -37,8 +38,8 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked --mount=type=cache,t
         libmpfr-dev \
         libusb-1.0-0-dev \
         lsb-release \
-        openjdk-17-jdk-headless \
-        openjdk-17-jre-headless \
+        openjdk-21-jdk-headless \
+        openjdk-21-jre-headless \
         python-is-python3 \
         python3 \
         python3-pip \
@@ -69,21 +70,21 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked --mount=type=cache,t
     curl -fsSL https://bazel.build/bazel-release.pub.gpg | gpg --dearmor > /tmp/bazel-archive-keyring.gpg
     mv /tmp/bazel-archive-keyring.gpg /usr/share/keyrings/
     echo "deb [arch=$(dpkg-architecture -q DEB_HOST_ARCH) signed-by=/usr/share/keyrings/bazel-archive-keyring.gpg] https://storage.googleapis.com/bazel-apt stable jdk1.8" | sudo tee /etc/apt/sources.list.d/bazel.list
-    apt update
-    apt install bazel bazel-8.6.0 bazel-9.1.0
+    apt-get update
+    apt-get install bazel bazel-8.6.0 bazel-9.1.0
+    echo "${_USERNAME} ALL=(ALL) NOPASSWD:/usr/bin/apt-get" >> /etc/sudoers.d/${_USERNAME}
     echo "${_USERNAME} ALL=(ALL) NOPASSWD:/usr/bin/apt" >> /etc/sudoers.d/${_USERNAME}
     echo "${_USERNAME} ALL=(ALL) NOPASSWD:/bin/mkdir" >> /etc/sudoers.d/${_USERNAME}
     echo "${_USERNAME} ALL=(ALL) NOPASSWD:/bin/chown" >> /etc/sudoers.d/${_USERNAME}
     echo "${_USERNAME} ALL=(ALL) NOPASSWD:/bin/ln" >> /etc/sudoers.d/${_USERNAME}
-    echo "${_USERNAME} ALL=(ALL) NOPASSWD:/usr/bin/xargs" >> /etc/sudoers.d/${_USERNAME}
-    addgroup --gid ${_GID} ${_USERNAME}
-    adduser \
-        --home ${HOME} \
-        --disabled-password \
-        --gecos "" \
+    groupadd --gid ${_GID} ${_USERNAME}
+    useradd \
+        --home-dir ${HOME} \
+        --comment "" \
         --uid ${_UID} \
         --gid ${_GID} \
         ${_USERNAME}
+    mkdir -p /home/${_USERNAME}
     chown ${_USERNAME}:${_USERNAME} ${HOME}
     # Work around differeing libmpfr versions between distros
     ln -sf /lib/x86_64-linux-gnu/libmpfr.so.6.2.0 /lib/x86_64-linux-gnu/libmpfr.so.4
