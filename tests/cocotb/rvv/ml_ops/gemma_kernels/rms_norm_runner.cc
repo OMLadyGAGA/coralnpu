@@ -18,8 +18,6 @@
 #define MAX_INPUT_SIZE 16384
 #define MAX_WEIGHT_SIZE 4096
 
-// Expose these as global symbols so Cocotb can inject the numpy arrays directly
-// into memory
 extern "C" {
 float rms_input[MAX_INPUT_SIZE] __attribute__((section(".extmem")))
 __attribute__((aligned(16)));
@@ -36,7 +34,6 @@ __attribute__((aligned(16))) = 640;
 float active_epsilon __attribute__((section(".extmem")))
 __attribute__((aligned(16))) = 1e-6f;
 
-// The cycle count performance metric
 uint32_t cycle_count __attribute__((section(".extmem")))
 __attribute__((aligned(16))) = 0;
 }

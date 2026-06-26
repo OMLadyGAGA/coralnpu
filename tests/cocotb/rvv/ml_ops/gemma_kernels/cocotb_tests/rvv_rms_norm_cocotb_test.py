@@ -11,15 +11,15 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-"""Test suite for RVV RMS Norm operations using Cocotb."""
+"""Test suite for RVV Gemma Kernels using Cocotb."""
 
 import os
 import cocotb
 import numpy as np
-from cocotb.triggers import ClockCycles
 from bazel_tools.tools.python.runfiles import runfiles
 
 from coralnpu_test_utils.sim_test_fixture import Fixture
+from sw.utils.metrics import log_vector_metrics
 
 
 def golden_rms_norm(x, w, eps=1e-6):
@@ -34,8 +34,8 @@ def golden_rms_norm(x, w, eps=1e-6):
 @cocotb.test()
 async def core_mini_rvv_rms_norm_test(dut):
     r = runfiles.Create()
-    # The 512KB memory map shifts CSRs to 0x200000
-    fixture = await Fixture.Create(dut, csr_base_addr=0x200000)
+    # Highmem configuration maps CSRs dynamically via highmem flag
+    fixture = await Fixture.Create(dut, highmem=True)
 
     elf_name = "rvv_rms_norm.elf"
     elf_path = r.Rlocation(
@@ -50,7 +50,6 @@ async def core_mini_rvv_rms_norm_test(dut):
         "active_hidden_size", "active_epsilon", "cycle_count"
     ])
 
-    # Reset the core before writing parameters and data to memory
     await fixture.core_mini_axi.reset()
 
     # Define test shapes:
@@ -72,15 +71,12 @@ async def core_mini_rvv_rms_norm_test(dut):
     for seq_len, hidden_size in test_shapes:
         dut._log.info(f"\nRunning shape: {seq_len}x{hidden_size}")
 
-        # Generate inputs
         input_data = rng.uniform(-1.0, 1.0,
                                  (seq_len, hidden_size)).astype(np.float32)
         weight_data = rng.uniform(-0.5, 0.5, (hidden_size,)).astype(np.float32)
 
-        # Calculate golden reference
         expected_output = golden_rms_norm(input_data, weight_data, eps=1e-6)
 
-        # Write configuration to the simulated memory
         await fixture.write('active_seq_len',
                             np.array([seq_len], dtype=np.uint32))
         await fixture.write('active_hidden_size',
@@ -95,29 +91,21 @@ async def core_mini_rvv_rms_norm_test(dut):
         await fixture.write('rms_output',
                             np.zeros_like(expected_output).flatten())
 
-        # Execute and wait for WFI halt
         sim_cycles = await fixture.run_to_halt(timeout_cycles=10000000)
 
         npu_cycles = int((await fixture.read('cycle_count',
                                              4)).view(dtype=np.uint32)[0])
 
-        # Read back actual output
         output_size_bytes = seq_len * hidden_size * 4
         actual_output = (await
                          fixture.read('rms_output', output_size_bytes)).view(
                              dtype=np.float32).reshape(seq_len, hidden_size)
 
-        # Check precision correctness
         np.testing.assert_allclose(expected_output,
                                    actual_output,
                                    rtol=1e-6,
                                    atol=1e-6)
 
-        # Print Benchmark Metrics
         total_elements = seq_len * hidden_size
-        cycles_per_element = npu_cycles / total_elements
-
-        dut._log.info(f"  Total Elements   : {total_elements:,}\n"
-                      f"  Host Sim Cycles  : {sim_cycles:,}\n"
-                      f"  NPU Core Cycles  : {npu_cycles:,}\n"
-                      f"  Cycles / Element : {cycles_per_element:.3f}")
+        log_vector_metrics(dut, f"RMS Norm Shape: {seq_len}x{hidden_size}",
+                           npu_cycles, total_elements)

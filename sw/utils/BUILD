@@ -19,3 +19,8 @@ cc_library(
     hdrs = ["utils.h"],
     target_compatible_with = ["//platforms/cpu:coralnpu_v2"],
 )
+
+py_library(
+    name = "metrics",
+    srcs = ["metrics.py"],
+)

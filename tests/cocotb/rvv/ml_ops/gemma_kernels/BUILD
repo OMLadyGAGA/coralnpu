@@ -31,14 +31,35 @@ template_rule(
         "rvv_rms_norm": {
             "srcs": ["rms_norm_runner.cc", "rvv_rms_norm.cc"],
             "hdrs": ["//sw/utils:utils.h"],
-            "itcm_size_kbytes": 512,
-            "dtcm_size_kbytes": 512,
+            "itcm_size_kbytes": 1024,
+            "dtcm_size_kbytes": 1024,
         },
         "rvv_flashattention_test": {
             "srcs": ["rvv_flashattention_runner.cc", "rvv_flashattention_kernel.cc"],
             "hdrs": ["//sw/utils:utils.h"],
-            "itcm_size_kbytes": 512,
-            "dtcm_size_kbytes": 512,
+            "itcm_size_kbytes": 1024,
+            "dtcm_size_kbytes": 1024,
+        },
+        "rvv_matmul": {
+            "srcs": ["rvv_matmul_runner.cc", "rvv_matmul.cc"],
+            "hdrs": ["//sw/utils:utils.h"],
+            "itcm_size_kbytes": 1024,
+            "dtcm_size_kbytes": 1024,
+            "enable_vmem": False,
+        },
+        "rvv_residual_add": {
+            "srcs": ["rvv_residual_add_runner.cc", "rvv_residual_add.cc"],
+            "hdrs": ["//sw/utils:utils.h"],
+            "itcm_size_kbytes": 1024,
+            "dtcm_size_kbytes": 1024,
+            "enable_vmem": False,
+        },
+        "rvv_tanh_gelu_mul": {
+            "srcs": ["rvv_tanh_gelu_mul_runner.cc", "rvv_tanh_gelu_mul.cc"],
+            "hdrs": ["//sw/utils:utils.h"],
+            "itcm_size_kbytes": 1024,
+            "dtcm_size_kbytes": 1024,
+            "enable_vmem": False,
         },
     },
 )
@@ -68,14 +89,15 @@ cocotb_test_suite(
     testcases = RVV_RMS_NORM_TESTCASES,
     testcases_vname = "RVV_RMS_NORM_TESTCASES",
     tests_kwargs = {
-        "hdl_toplevel": "RvvCoreMini_ITCM512KB_DTCM512KBAxi",
+        "hdl_toplevel": "RvvCoreMiniHighmemAxi",
         "waves": False,
         "seed": "42",
         "tags": ["manual"],
-        "test_module": ["rvv_rms_norm_cocotb_test.py"],
+        "test_module": ["cocotb_tests/rvv_rms_norm_cocotb_test.py"],
         "deps": [
             "//coralnpu_test_utils:sim_test_fixture",
             "@bazel_tools//tools/python/runfiles",
+            "//sw/utils:metrics",
         ],
         "data": [
             ":rvv_rms_norm.elf",
@@ -91,8 +113,8 @@ cocotb_test_suite(
     ],
     vcs_defines = VCS_DEFINES,
     vcs_test_args = VCS_TEST_ARGS,
-    vcs_verilog_sources = ["//hdl/chisel/src/coralnpu:rvv_core_mini_axi_cc_library_verilog"],
-    verilator_model = "//tests/cocotb:rvv_core_mini_itcm512kb_dtcm512kb_axi_model",
+    vcs_verilog_sources = ["//hdl/chisel/src/coralnpu:rvv_core_mini_highmem_axi_cc_library_verilog"],
+    verilator_model = "//tests/cocotb:rvv_core_mini_highmem_axi_model",
 )
 
 cocotb_test_suite(
@@ -104,14 +126,15 @@ cocotb_test_suite(
     testcases = RVV_FLASHATTENTION_TESTCASES,
     testcases_vname = "RVV_FLASHATTENTION_TESTCASES",
     tests_kwargs = {
-        "hdl_toplevel": "RvvCoreMini_ITCM512KB_DTCM512KBAxi",
+        "hdl_toplevel": "RvvCoreMiniHighmemAxi",
         "waves": False,
         "seed": "42",
         "tags": ["manual"],
-        "test_module": ["rvv_flashattention_cocotb_test.py"],
+        "test_module": ["cocotb_tests/rvv_flashattention_cocotb_test.py"],
         "deps": [
             "//coralnpu_test_utils:sim_test_fixture",
             "@bazel_tools//tools/python/runfiles",
+            "//sw/utils:metrics",
         ],
         "data": [
             ":rvv_flashattention_test.elf",
@@ -127,6 +150,170 @@ cocotb_test_suite(
     ],
     vcs_defines = VCS_DEFINES,
     vcs_test_args = VCS_TEST_ARGS,
-    vcs_verilog_sources = ["//hdl/chisel/src/coralnpu:rvv_core_mini_axi_cc_library_verilog"],
-    verilator_model = "//tests/cocotb:rvv_core_mini_itcm512kb_dtcm512kb_axi_model",
+    vcs_verilog_sources = ["//hdl/chisel/src/coralnpu:rvv_core_mini_highmem_axi_cc_library_verilog"],
+    verilator_model = "//tests/cocotb:rvv_core_mini_highmem_axi_model",
+)
+
+RVV_MATMUL_LHS_1D_TESTCASES = [
+    "core_mini_rvv_matmul_lhs_1d_test",
+]
+
+cocotb_test_suite(
+    name = "rvv_matmul_lhs_1d_cocotb_test",
+    simulators = [
+        "verilator",
+        "vcs",
+    ],
+    testcases = RVV_MATMUL_LHS_1D_TESTCASES,
+    testcases_vname = "RVV_MATMUL_LHS_1D_TESTCASES",
+    tests_kwargs = {
+        "hdl_toplevel": "RvvCoreMiniHighmemAxi",
+        "waves": False,
+        "seed": "42",
+        "tags": ["manual"],
+        "test_module": ["cocotb_tests/rvv_matmul_cocotb_test.py"],
+        "deps": [
+            "//coralnpu_test_utils:sim_test_fixture",
+            "@bazel_tools//tools/python/runfiles",
+            "//sw/utils:metrics",
+        ],
+        "data": [
+            ":rvv_matmul.elf",
+            ":weights_files",
+        ],
+        "size": "enormous",
+    },
+    vcs_build_args = VCS_BUILD_ARGS,
+    vcs_data = [
+        ":rvv_matmul.elf",
+        "//tests/cocotb:xprop.cfg",
+        "@coralnpu_hw//hdl/verilog:dpi_files",
+    ],
+    vcs_defines = VCS_DEFINES,
+    vcs_test_args = VCS_TEST_ARGS,
+    vcs_verilog_sources = ["//hdl/chisel/src/coralnpu:rvv_core_mini_highmem_axi_cc_library_verilog"],
+    verilator_model = "//tests/cocotb:rvv_core_mini_highmem_axi_model",
+)
+
+RVV_MATMUL_TILED_2D_TESTCASES = [
+    "core_mini_rvv_matmul_tiled_2d_test",
+]
+
+cocotb_test_suite(
+    name = "rvv_matmul_tiled_2d_cocotb_test",
+    simulators = [
+        "verilator",
+        "vcs",
+    ],
+    testcases = RVV_MATMUL_TILED_2D_TESTCASES,
+    testcases_vname = "RVV_MATMUL_TILED_2D_TESTCASES",
+    tests_kwargs = {
+        "hdl_toplevel": "RvvCoreMiniHighmemAxi",
+        "waves": False,
+        "seed": "42",
+        "tags": ["manual"],
+        "test_module": ["cocotb_tests/rvv_matmul_cocotb_test.py"],
+        "deps": [
+            "//coralnpu_test_utils:sim_test_fixture",
+            "@bazel_tools//tools/python/runfiles",
+            "//sw/utils:metrics",
+        ],
+        "data": [
+            ":rvv_matmul.elf",
+            ":weights_files",
+        ],
+        "size": "enormous",
+    },
+    vcs_build_args = VCS_BUILD_ARGS,
+    vcs_data = [
+        ":rvv_matmul.elf",
+        "//tests/cocotb:xprop.cfg",
+        "@coralnpu_hw//hdl/verilog:dpi_files",
+    ],
+    vcs_defines = VCS_DEFINES,
+    vcs_test_args = VCS_TEST_ARGS,
+    vcs_verilog_sources = ["//hdl/chisel/src/coralnpu:rvv_core_mini_highmem_axi_cc_library_verilog"],
+    verilator_model = "//tests/cocotb:rvv_core_mini_highmem_axi_model",
+)
+
+RVV_GEMMA_RESIDUAL_ADD_TESTCASES = [
+    "core_mini_rvv_residual_add_test",
+]
+
+cocotb_test_suite(
+    name = "rvv_residual_add_cocotb_test",
+    simulators = [
+        "verilator",
+        "vcs",
+    ],
+    testcases = RVV_GEMMA_RESIDUAL_ADD_TESTCASES,
+    testcases_vname = "RVV_GEMMA_RESIDUAL_ADD_TESTCASES",
+    tests_kwargs = {
+        "hdl_toplevel": "RvvCoreMiniHighmemAxi",
+        "waves": False,
+        "seed": "42",
+        "tags": ["manual"],
+        "test_module": ["cocotb_tests/rvv_residual_add_cocotb_test.py"],
+        "deps": [
+            "//coralnpu_test_utils:sim_test_fixture",
+            "@bazel_tools//tools/python/runfiles",
+            "//sw/utils:metrics",
+        ],
+        "data": [
+            ":rvv_residual_add.elf",
+            ":weights_files",
+        ],
+        "size": "enormous",
+    },
+    vcs_build_args = VCS_BUILD_ARGS,
+    vcs_data = [
+        ":rvv_residual_add.elf",
+        "//tests/cocotb:xprop.cfg",
+        "@coralnpu_hw//hdl/verilog:dpi_files",
+    ],
+    vcs_defines = VCS_DEFINES,
+    vcs_test_args = VCS_TEST_ARGS,
+    vcs_verilog_sources = ["//hdl/chisel/src/coralnpu:rvv_core_mini_highmem_axi_cc_library_verilog"],
+    verilator_model = "//tests/cocotb:rvv_core_mini_highmem_axi_model",
+)
+
+RVV_GEMMA_TANH_GELU_MUL_TESTCASES = [
+    "core_mini_rvv_tanh_gelu_mul_test",
+]
+
+cocotb_test_suite(
+    name = "rvv_tanh_gelu_mul_cocotb_test",
+    simulators = [
+        "verilator",
+        "vcs",
+    ],
+    testcases = RVV_GEMMA_TANH_GELU_MUL_TESTCASES,
+    testcases_vname = "RVV_GEMMA_TANH_GELU_MUL_TESTCASES",
+    tests_kwargs = {
+        "hdl_toplevel": "RvvCoreMiniHighmemAxi",
+        "waves": False,
+        "seed": "42",
+        "tags": ["manual"],
+        "test_module": ["cocotb_tests/rvv_tanh_gelu_mul_cocotb_test.py"],
+        "deps": [
+            "//coralnpu_test_utils:sim_test_fixture",
+            "@bazel_tools//tools/python/runfiles",
+            "//sw/utils:metrics",
+        ],
+        "data": [
+            ":rvv_tanh_gelu_mul.elf",
+            ":weights_files",
+        ],
+        "size": "enormous",
+    },
+    vcs_build_args = VCS_BUILD_ARGS,
+    vcs_data = [
+        ":rvv_tanh_gelu_mul.elf",
+        "//tests/cocotb:xprop.cfg",
+        "@coralnpu_hw//hdl/verilog:dpi_files",
+    ],
+    vcs_defines = VCS_DEFINES,
+    vcs_test_args = VCS_TEST_ARGS,
+    vcs_verilog_sources = ["//hdl/chisel/src/coralnpu:rvv_core_mini_highmem_axi_cc_library_verilog"],
+    verilator_model = "//tests/cocotb:rvv_core_mini_highmem_axi_model",
 )

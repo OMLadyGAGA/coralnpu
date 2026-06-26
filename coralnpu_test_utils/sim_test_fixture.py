@@ -27,9 +27,9 @@ class Fixture:
     @classmethod
     async def Create(cls, dut, **kwargs):
         if kwargs.get("highmem"):
-            inst = cls(dut, csr_base_addr=0x200000)
-        else:
-            inst = cls(dut, **kwargs)
+            kwargs["csr_base_addr"] = 0x200000
+            del kwargs["highmem"]
+        inst = cls(dut, **kwargs)
         await inst.core_mini_axi.init()
         await inst.core_mini_axi.reset()
         cocotb.start_soon(inst.core_mini_axi.clock.start())
@@ -48,17 +48,18 @@ class Fixture:
             self.entry_point = await self.core_mini_axi.load_elf(f)
             for symbol in symbols:
                 try:
-                    self.symbols[symbol] = self.core_mini_axi.lookup_symbol(f, symbol)
+                    self.symbols[symbol] = self.core_mini_axi.lookup_symbol(
+                        f, symbol)
                 except Exception as e:
                     if not optional:
                         raise e
             if optional_symbols:
                 for symbol in optional_symbols:
                     try:
-                        self.symbols[symbol] = self.core_mini_axi.lookup_symbol(f, symbol)
+                        self.symbols[symbol] = self.core_mini_axi.lookup_symbol(
+                            f, symbol)
                     except Exception:
                         pass
-
 
     async def write(self, symbol: str, data):
         await self.core_mini_axi.write(self.symbols[symbol], data)
@@ -66,10 +67,12 @@ class Fixture:
     async def write_word(self, symbol: str, data):
         await self.core_mini_axi.write_word(self.symbols[symbol], data)
 
-    async def write_ptr(
-            self, addr_symbol: str, data_symbol: str, offset: int = 0):
-        await self.core_mini_axi.write_word(
-            self.symbols[addr_symbol], self.symbols[data_symbol] + offset)
+    async def write_ptr(self,
+                        addr_symbol: str,
+                        data_symbol: str,
+                        offset: int = 0):
+        await self.core_mini_axi.write_word(self.symbols[addr_symbol],
+                                            self.symbols[data_symbol] + offset)
 
     async def read(self, symbol: str, size: int):
         return await self.core_mini_axi.read(self.symbols[symbol], size)
