@@ -16,7 +16,6 @@ package bus
 
 import chisel3._
 import chisel3.util._
-import coralnpu.Parameters
 import common.CoralNPURRArbiter
 import _root_.circt.stage.{ChiselStage,FirtoolOption}
 import chisel3.stage.ChiselGeneratorAnnotation
@@ -32,22 +31,30 @@ import scala.annotation.nowarn
   *
   * @param p The CoralNPU parameters.
   */
-class TLUL2Axi[A_USER <: Data with TLUL_A_User_InstrType, D_USER <: Data](p_tl: Parameters, p_axi: Parameters, userAGen: () => A_USER, userDGen: () => D_USER) extends Module {
-  val tlul_p = new TLULParameters(p_tl)
+class TLUL2Axi[A_USER <: Data with TLUL_A_User_InstrType, D_USER <: Data](
+  val p_tl: TLULParameters,
+  val axiDataBits: Int,
+  val axiAddrBits: Int,
+  val axiIdBits: Int,
+  userAGen: () => A_USER,
+  userDGen: () => D_USER
+) extends Module {
+  val tlul_p = p_tl
   val io = IO(new Bundle {
     val tl_a = Flipped(Decoupled(new TileLink_A_ChannelBase(tlul_p, userAGen))) // TileLink Input
     val tl_d = Decoupled(new TileLink_D_ChannelBase(tlul_p, userDGen))          // TileLink Output
-    val axi = new AxiMasterIO(p_axi.axi2AddrBits, p_axi.axi2DataBits, p_axi.axi2IdBits)
+    val axi = new AxiMasterIO(axiAddrBits, axiDataBits, axiIdBits)
   })
 
   // --- AXI ID Mapper and Transaction Limiter ---
-  val axiIdWidth = p_axi.axi2IdBits
+  val axiIdWidth = axiIdBits
   val idWidthMismatch = tlul_p.o > axiIdWidth
 
-  val p_tl_remapped_params = new Parameters(p_tl.m, p_tl.hartId)
-  p_tl_remapped_params.lsuDataBits = p_tl.lsuDataBits
-  p_tl_remapped_params.axi2IdBits = axiIdWidth
-  val p_tl_remapped = new TLULParameters(p_tl_remapped_params)
+  val p_tl_remapped = new TLULParameters(
+    dataBits = p_tl.w * 8,
+    addrBits = p_tl.a,
+    idBits = axiIdWidth
+  )
 
   val tl_a_q = Module(new Queue(chiselTypeOf(io.tl_a.bits), 2))
   tl_a_q.io.enq <> io.tl_a
@@ -82,7 +89,7 @@ class TLUL2Axi[A_USER <: Data with TLUL_A_User_InstrType, D_USER <: Data](p_tl: 
   // --- AXI Channel Generation ---
   // TODO: Consider gating these signals (on get/put)? Especially address.
   // Drive AXI write channels for Put requests
-  val aw_q = Module(new Queue(new AxiAddress(p_axi.axi2AddrBits, p_axi.axi2DataBits, p_axi.axi2IdBits), 1))
+  val aw_q = Module(new Queue(new AxiAddress(axiAddrBits, axiDataBits, axiIdBits), 1))
   aw_q.io.enq.valid := tl_a_q_remapped.valid && is_put
   aw_q.io.enq.bits.addr := tl_a_q_remapped.bits.address
   aw_q.io.enq.bits.id := tl_a_q_remapped.bits.source
@@ -95,7 +102,7 @@ class TLUL2Axi[A_USER <: Data with TLUL_A_User_InstrType, D_USER <: Data](p_tl: 
   aw_q.io.enq.bits.qos := 0.U
   aw_q.io.enq.bits.region := 0.U
 
-  val w_q = Module(new Queue(new AxiWriteData(p_axi.axi2DataBits, p_axi.axi2IdBits), 1))
+  val w_q = Module(new Queue(new AxiWriteData(axiDataBits, axiIdBits), 1))
   w_q.io.enq.valid := tl_a_q_remapped.valid && is_put
   w_q.io.enq.bits.data := tl_a_q_remapped.bits.data
   w_q.io.enq.bits.strb := tl_a_q_remapped.bits.mask
@@ -130,10 +137,10 @@ class TLUL2Axi[A_USER <: Data with TLUL_A_User_InstrType, D_USER <: Data](p_tl: 
   // --- Response Path ---
 
   read_tx_info_q.io.enq.valid := tl_a_q_remapped.valid && is_get && io.axi.read.addr.ready
-  read_tx_info_q.io.enq.bits.size := Mux((p_axi.axi2DataBits == 256).B, 5.U, tl_a_q_remapped.bits.size)
+  read_tx_info_q.io.enq.bits.size := Mux((axiDataBits == 256).B, 5.U, tl_a_q_remapped.bits.size)
 
   write_tx_info_q.io.enq.valid := tl_a_q_remapped.valid && is_put && aw_q.io.enq.ready && w_q.io.enq.ready
-  write_tx_info_q.io.enq.bits.size := Mux((p_axi.axi2DataBits == 256).B, 5.U, tl_a_q_remapped.bits.size)
+  write_tx_info_q.io.enq.bits.size := Mux((axiDataBits == 256).B, 5.U, tl_a_q_remapped.bits.size)
 
   // --- TileLink D-Channel (Response) Generation ---
   val read_response = Wire(Decoupled(new TileLink_D_ChannelBase(p_tl_remapped, userDGen)))
@@ -175,10 +182,9 @@ class TLUL2Axi[A_USER <: Data with TLUL_A_User_InstrType, D_USER <: Data](p_tl: 
 
 @nowarn
 object EmitTLUL2Axi extends App {
-  val p_tl = Parameters()
-  val p_axi = Parameters()
+  val tlul_p = new TLULParameters(dataBits = 256, addrBits = 32, idBits = 6)
   (new ChiselStage).execute(
     Array("--target", "systemverilog") ++ args,
-    Seq(ChiselGeneratorAnnotation(() => new TLUL2Axi(p_tl, p_axi, () => new OpenTitanTileLink_A_User, () => new OpenTitanTileLink_D_User))) ++ Seq(FirtoolOption("-enable-layers=Verification"))
+    Seq(ChiselGeneratorAnnotation(() => new TLUL2Axi(tlul_p, 256, 32, 6, () => new OpenTitanTileLink_A_User, () => new OpenTitanTileLink_D_User))) ++ Seq(FirtoolOption("-enable-layers=Verification"))
   )
 }

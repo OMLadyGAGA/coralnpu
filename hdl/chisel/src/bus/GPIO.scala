@@ -16,14 +16,13 @@ package bus
 
 import chisel3._
 import chisel3.util._
-import coralnpu.Parameters
 
 case class GPIOParameters(
     width: Int
 )
 
-class GPIO(p: Parameters, gpioParams: GPIOParameters) extends Module {
-  val tlul_p = new TLULParameters(p)
+class GPIO(p: TLULParameters, gpioParams: GPIOParameters) extends Module {
+  val tlul_p = p
   val io     = IO(new Bundle {
     val tl        = Flipped(new OpenTitanTileLink.Host2Device(tlul_p))
     val gpio_o    = Output(UInt(gpioParams.width.W))
@@ -114,11 +113,11 @@ import scala.annotation.nowarn
 
 @nowarn
 object EmitGPIO extends App {
-  val p  = new Parameters
+  val tlul_p = new TLULParameters(dataBits = 32, addrBits = 32, idBits = 10)
   val gp = GPIOParameters(width = 32)
   (new ChiselStage).execute(
     Array("--target", "systemverilog") ++ args,
-    Seq(ChiselGeneratorAnnotation(() => new GPIO(p, gp))) ++ Seq(
+    Seq(ChiselGeneratorAnnotation(() => new GPIO(tlul_p, gp))) ++ Seq(
       FirtoolOption("-enable-layers=Verification")
     )
   )

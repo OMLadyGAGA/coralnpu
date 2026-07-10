@@ -97,21 +97,20 @@ import scala.annotation.nowarn
 
 @nowarn
 object TlulFifoSyncEmitter extends App {
-  val p = new coralnpu.Parameters
+  val tlul_p = new TLULParameters(dataBits = 256, addrBits = 32, idBits = 6)
   (new ChiselStage).execute(
     Array("--target", "systemverilog") ++ args,
-    Seq(ChiselGeneratorAnnotation(() => new TlulFifoSync(new bus.TLULParameters(p)))) ++ Seq(FirtoolOption("-enable-layers=Verification"))
+    Seq(ChiselGeneratorAnnotation(() => new TlulFifoSync(tlul_p))) ++ Seq(FirtoolOption("-enable-layers=Verification"))
   )
 }
 
 @nowarn
 object EmitTlulFifoSyncDepth0 extends App {
-  val p = new coralnpu.Parameters
-  p.lsuDataBits = 128
+  val tlul_p = new TLULParameters(dataBits = 128, addrBits = 32, idBits = 6)
   (new ChiselStage).execute(
     Array("--target", "systemverilog") ++ args,
     Seq(ChiselGeneratorAnnotation(() => new TlulFifoSync(
-      p = new bus.TLULParameters(p),
+      p = tlul_p,
       reqDepth = 0,
       rspDepth = 0,
       spareReqW = 4,

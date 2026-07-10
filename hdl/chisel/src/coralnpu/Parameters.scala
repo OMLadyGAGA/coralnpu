@@ -18,6 +18,8 @@ import chisel3._
 import chisel3.util._
 import scala.collection.mutable.StringBuilder
 
+import bus.TLULParameters
+
 object MemoryRegionType extends ChiselEnum {
   val IMEM = Value
   val DMEM = Value
@@ -172,6 +174,14 @@ class Parameters(var m: Seq[MemoryRegion] = Seq(), val hartId: Int = 0, val xlen
 
   val csrInCount = 13
   val csrOutCount = 9
+
+  def toTLUL(): TLULParameters = {
+    new TLULParameters(
+      dataBits = axi2DataBits,
+      addrBits = axi2AddrBits,
+      idBits = axi2IdBits
+    )
+  }
 }
 
 import scala.reflect.runtime.{universe => ru}

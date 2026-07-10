@@ -21,7 +21,7 @@ import coralnpu.Parameters
 import coralnpu.Sram_Nx128
 
 class TlulSram(p: Parameters, sramSizeBytes: Int, globalBaseAddr: Int = 0) extends Module {
-  val tlul_p = new TLULParameters(p)
+  val tlul_p = p.toTLUL()
   val io     = IO(new Bundle {
     val tl = Flipped(new OpenTitanTileLink.Host2Device(tlul_p))
   })
@@ -29,7 +29,7 @@ class TlulSram(p: Parameters, sramSizeBytes: Int, globalBaseAddr: Int = 0) exten
   val tcmEntries    = sramSizeBytes / 16
   val sramAddrWidth = log2Ceil(tcmEntries)
 
-  val adapter = Module(new TlulToSram(p, sramAddrWidth))
+  val adapter = Module(new TlulToSram(p.toTLUL(), sramAddrWidth))
   val sram    = Module(new Sram_Nx128(tcmEntries, globalBaseAddr))
 
   adapter.io.tl <> io.tl

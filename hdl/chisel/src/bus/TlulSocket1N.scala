@@ -3,7 +3,6 @@ package bus
 import chisel3._
 import chisel3.util._
 import common.MakeInvalid
-import coralnpu.Parameters
 
 // A simple error responder that immediately generates an error response
 // for any incoming request.
@@ -114,14 +113,13 @@ import scala.annotation.nowarn
 
 @nowarn
 object TlulSocket1N_128Emitter extends App {
-  val p = new Parameters
-  p.lsuDataBits = 128
+  val tlul_p = new TLULParameters(dataBits = 128, addrBits = 32, idBits = 6)
   (new ChiselStage).execute(
     Array("--target", "systemverilog") ++ args,
     Seq(
       ChiselGeneratorAnnotation(() =>
         new TlulSocket1N(
-          p = new bus.TLULParameters(p),
+          p = tlul_p,
           N = 4, // Default value, will be overridden at instantiation
           DReqPass = Seq.fill(4)(true),
           DRspPass = Seq.fill(4)(true),

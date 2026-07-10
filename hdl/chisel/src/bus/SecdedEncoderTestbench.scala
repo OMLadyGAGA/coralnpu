@@ -15,7 +15,6 @@
 package bus
 
 import chisel3._
-import coralnpu.Parameters
 
 /**
   * A testbench DUT that instantiates a single SecdedEncoder so it can be
@@ -40,11 +39,9 @@ import scala.annotation.nowarn
 
 @nowarn
 object EmitSecdedEncoderTestbench extends App {
-  val p = new Parameters
-  p.lsuDataBits = 128
   (new ChiselStage).execute(
     Array("--target", "systemverilog") ++ args,
-    Seq(ChiselGeneratorAnnotation(() => new SecdedEncoderTestbench(p.lsuDataBits, "SecdedEncoderTestbench128"))) ++ Seq(FirtoolOption("-enable-layers=Verification"))
+    Seq(ChiselGeneratorAnnotation(() => new SecdedEncoderTestbench(128, "SecdedEncoderTestbench128"))) ++ Seq(FirtoolOption("-enable-layers=Verification"))
   )
 }
 

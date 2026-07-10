@@ -130,7 +130,7 @@ class CoralNPUChiselSubsystem(val hostParams: Seq[bus.TLULParameters], val devic
       val spi2tlul_p = new Parameters
       spi2tlul_p.lsuDataBits = p.lsuDataBits
       spi2tlul_p.axi2IdBits = 8
-      val m = Module(new Spi2TLUL(spi2tlul_p))
+      val m = Module(new Spi2TLUL(spi2tlul_p.toTLUL()))
       m.suggestName("spi2tlul")
       m
     }
@@ -173,14 +173,14 @@ class CoralNPUChiselSubsystem(val hostParams: Seq[bus.TLULParameters], val devic
             val spi_p = new Parameters
             spi_p.lsuDataBits = p.lsuDataBits
             spi_p.axi2IdBits = 10
-            Module(new SpiMaster(spi_p))
+            Module(new SpiMaster(spi_p.toTLUL()))
 
           case p: GPIOModuleParameters =>
             val gpio_p = new Parameters
             gpio_p.lsuDataBits = 32
             gpio_p.axi2IdBits = 10
             val gp = bus.GPIOParameters(width = p.width)
-            Module(new bus.GPIO(gpio_p, gp))
+            Module(new bus.GPIO(gpio_p.toTLUL(), gp))
 
           case p: DmaParameters =>
             val host_p = new Parameters
@@ -188,19 +188,19 @@ class CoralNPUChiselSubsystem(val hostParams: Seq[bus.TLULParameters], val devic
             val device_p = new Parameters
             device_p.lsuDataBits = p.deviceDataBits
             device_p.axi2IdBits = 10
-            Module(new bus.DmaEngine(host_p, device_p))
+            Module(new bus.DmaEngine(host_p.toTLUL(), device_p.toTLUL()))
 
           case ClintParameters =>
             val clint_p = new Parameters
             clint_p.lsuDataBits = 32
             clint_p.axi2IdBits = 10
-            Module(new bus.Clint(clint_p))
+            Module(new bus.Clint(clint_p.toTLUL()))
 
           case p: PlicParameters =>
             val plic_p = new Parameters
             plic_p.lsuDataBits = 32
             plic_p.axi2IdBits = 10
-            Module(new bus.Plic(plic_p, p.numInterrupts, p.priorityWidth))
+            Module(new bus.Plic(plic_p.toTLUL(), p.numInterrupts, p.priorityWidth))
 
           case p: TlulSramParameters =>
             val sram_p = new Parameters
@@ -321,11 +321,16 @@ class CoralNPUChiselSubsystem(val hostParams: Seq[bus.TLULParameters], val devic
     val ddr_rst = ddrAsyncPorts.reset
 
     val ddr_ctrl_tlul_p = deviceParams(cfg.devices.indexWhere(_.name == "ddr_ctrl"))
-    val ddr_ctrl_tl_p = new Parameters
-    ddr_ctrl_tl_p.lsuDataBits = ddr_ctrl_tlul_p.w * 8
     val ddr_ctrl_axi_p = new Parameters
     ddr_ctrl_axi_p.lsuDataBits = ddr_ctrl_tlul_p.w * 8
-    val ddr_ctrl_axi_conv = Module(new TLUL2Axi(ddr_ctrl_tl_p, ddr_ctrl_axi_p, () => new OpenTitanTileLink_A_User, () => new OpenTitanTileLink_D_User))
+    val ddr_ctrl_axi_conv = Module(new TLUL2Axi(
+      ddr_ctrl_tlul_p,
+      ddr_ctrl_axi_p.axi2DataBits,
+      ddr_ctrl_axi_p.axi2AddrBits,
+      ddr_ctrl_axi_p.axi2IdBits,
+      () => new OpenTitanTileLink_A_User,
+      () => new OpenTitanTileLink_D_User
+    ))
     ddr_ctrl_axi_conv.clock := ddr_clk
     ddr_ctrl_axi_conv.reset := ddr_rst
     ddr_ctrl_axi_conv.io.tl_a <> xbar.io.devices("ddr_ctrl").a
@@ -334,13 +339,11 @@ class CoralNPUChiselSubsystem(val hostParams: Seq[bus.TLULParameters], val devic
 
     // --- DDR Memory AXI Interface (128-bit TL -> 256-bit TL -> 256-bit AXI) ---
     // Define parameters for the 256-bit bus that exists AFTER the width bridge.
-    val ddr_mem_256_coralnpu_p = {
-      val p = new Parameters
-      p.lsuDataBits = 256
-      p.axi2IdBits = 10
-      p
-    }
-    val ddr_mem_256_tlul_p = new bus.TLULParameters(ddr_mem_256_coralnpu_p)
+    val ddr_mem_256_tlul_p = new bus.TLULParameters(
+      dataBits = 256,
+      addrBits = 32,
+      idBits = 10
+    )
 
     // Define parameters for the final 256-bit AXI port.
     val ddr_mem_axi_p = {
@@ -354,7 +357,14 @@ class CoralNPUChiselSubsystem(val hostParams: Seq[bus.TLULParameters], val devic
     val ddr_mem_bridge = Module(new TlulWidthBridge(xbar.commonParams, ddr_mem_256_tlul_p))
 
     // Instantiate the AXI converter: 256-bit TL to 256-bit AXI.
-    val ddr_mem_axi_conv = Module(new TLUL2Axi(ddr_mem_256_coralnpu_p, ddr_mem_axi_p, () => new OpenTitanTileLink_A_User, () => new OpenTitanTileLink_D_User))
+    val ddr_mem_axi_conv = Module(new TLUL2Axi(
+      ddr_mem_256_tlul_p,
+      ddr_mem_axi_p.axi2DataBits,
+      ddr_mem_axi_p.axi2AddrBits,
+      ddr_mem_axi_p.axi2IdBits,
+      () => new OpenTitanTileLink_A_User,
+      () => new OpenTitanTileLink_D_User
+    ))
 
     ddr_mem_bridge.clock := ddr_clk
     ddr_mem_bridge.reset := ddr_rst
@@ -382,7 +392,7 @@ class CoralNPUChiselSubsystem(val hostParams: Seq[bus.TLULParameters], val devic
     ispAxiParams.lsuDataBits = 64
 
     val axibm1 = withClockAndReset(ispAsyncPorts.clock, ispAsyncPorts.reset) {
-      Module(new Axi2TLUL(ispAxiParams, () => new OpenTitanTileLink_A_User, () => new OpenTitanTileLink_D_User))
+      Module(new Axi2TLUL(ispAxiParams.toTLUL(), () => new OpenTitanTileLink_A_User, () => new OpenTitanTileLink_D_User))
     }
     axibm1.io.axi <> io.ispyocto_m1_axi
     xbar.io.hosts(m1HostName).a.valid := axibm1.io.tl_a.valid
@@ -396,7 +406,7 @@ class CoralNPUChiselSubsystem(val hostParams: Seq[bus.TLULParameters], val devic
     val m2HostName = "ispyocto_m2"
 
     val axibm2 = withClockAndReset(ispAsyncPorts.clock, ispAsyncPorts.reset) {
-      Module(new Axi2TLUL(ispAxiParams, () => new OpenTitanTileLink_A_User, () => new OpenTitanTileLink_D_User))
+      Module(new Axi2TLUL(ispAxiParams.toTLUL(), () => new OpenTitanTileLink_A_User, () => new OpenTitanTileLink_D_User))
     }
     axibm2.io.axi <> io.ispyocto_m2_axi
     xbar.io.hosts(m2HostName).a.valid := axibm2.io.tl_a.valid
@@ -435,16 +445,11 @@ object CoralNPUChiselSubsystemEmitter extends App {
 
   val hostParams = SoCChiselConfig(itcmSize, dtcmSize).crossbar.hosts(enableTestHarness).map {
     host =>
-    val p = new Parameters
-    p.lsuDataBits = host.width
-    new bus.TLULParameters(p)
+    new bus.TLULParameters(dataBits = host.width, addrBits = 32, idBits = 6)
   }
   val deviceParams = SoCChiselConfig(itcmSize, dtcmSize).crossbar.devices.map {
     device =>
-    val p = new Parameters
-    p.lsuDataBits = device.width
-    p.axi2IdBits = 10
-    new bus.TLULParameters(p)
+    new bus.TLULParameters(dataBits = device.width, addrBits = 32, idBits = 10)
   }
 
   // Manually parse arguments to find the target directory.

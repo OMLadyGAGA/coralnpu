@@ -3,7 +3,7 @@ package bus
 import chisel3._
 import chisel3.util._
 
-import coralnpu.Parameters
+
 
 
 class TlulSocketM1(
@@ -23,12 +23,11 @@ class TlulSocketM1(
   val StIdW = log2Ceil(M)
 
   // 1. Define device-side parameters (augmented source ID width)
-  val p_d = {
-    val mock_p = new coralnpu.Parameters()
-    mock_p.lsuDataBits = p.w * 8
-    mock_p.axi2IdBits = p.o + StIdW
-    new bus.TLULParameters(mock_p)
-  }
+  val p_d = new TLULParameters(
+    dataBits = p.w * 8,
+    addrBits = p.a,
+    idBits = p.o + StIdW
+  )
 
   val io = IO(new Bundle {
     val tl_h = Flipped(Vec(M, new OpenTitanTileLink.Host2Device(p)))
@@ -76,14 +75,13 @@ import scala.annotation.nowarn
 
 @nowarn
 object TlulSocketM1_2_128Emitter extends App {
-  val p = new Parameters
-  p.lsuDataBits = 128
+  val tlul_p = new TLULParameters(dataBits = 128, addrBits = 32, idBits = 6)
   (new ChiselStage).execute(
     Array("--target", "systemverilog") ++ args,
     Seq(
       ChiselGeneratorAnnotation(() =>
         new TlulSocketM1(
-          p = new bus.TLULParameters(p),
+          p = tlul_p,
           M = 2,
           HReqDepth = Seq.fill(2)(0),
           HRspDepth = Seq.fill(2)(0),
@@ -98,14 +96,13 @@ object TlulSocketM1_2_128Emitter extends App {
 
 @nowarn
 object TlulSocketM1_3_128Emitter extends App {
-  val p = new Parameters
-  p.lsuDataBits = 128
+  val tlul_p = new TLULParameters(dataBits = 128, addrBits = 32, idBits = 6)
   (new ChiselStage).execute(
     Array("--target", "systemverilog") ++ args,
     Seq(
       ChiselGeneratorAnnotation(() =>
         new TlulSocketM1(
-          p = new bus.TLULParameters(p),
+          p = tlul_p,
           M = 3,
           HReqDepth = Seq.fill(3)(0),
           HRspDepth = Seq.fill(3)(0),

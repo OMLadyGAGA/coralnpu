@@ -21,14 +21,14 @@ import org.scalatest.freespec.AnyFreeSpec
 class TlulToSramTest extends AnyFreeSpec with ChiselSim with TLULTestUtils {
   val p = new Parameters
   p.lsuDataBits = 128
-  val tlul_p = new TLULParameters(p)
+  val tlul_p = p.toTLUL()
 
   "TlulToSram should handle basic read/write" in {
     simulate(new Module {
       val io = IO(new Bundle {
         val tl = Flipped(new OpenTitanTileLink.Host2Device(tlul_p))
       })
-      val dut = Module(new TlulToSram(p, 10))
+      val dut = Module(new TlulToSram(tlul_p, 10))
       io.tl <> dut.io.tl
 
       // Mock SRAM (registered memory)
@@ -74,7 +74,7 @@ class TlulToSramTest extends AnyFreeSpec with ChiselSim with TLULTestUtils {
       val io = IO(new Bundle {
         val tl = Flipped(new OpenTitanTileLink.Host2Device(tlul_p))
       })
-      val dut = Module(new TlulToSram(p, 10))
+      val dut = Module(new TlulToSram(tlul_p, 10))
       io.tl <> dut.io.tl
 
       // Mock SRAM

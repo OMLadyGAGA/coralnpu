@@ -16,7 +16,6 @@ package bus
 
 import chisel3._
 import chisel3.util._
-import coralnpu.Parameters
 
 object ClintRegister extends ChiselEnum {
   val MSIP        = Value("h0000".U(16.W))
@@ -26,8 +25,8 @@ object ClintRegister extends ChiselEnum {
   val MTIME_HI    = Value("hBFFC".U(16.W))
 }
 
-class Clint(p: Parameters) extends Module {
-  val tlul_p = new TLULParameters(p)
+class Clint(p: TLULParameters) extends Module {
+  val tlul_p = p
   val io     = IO(new Bundle {
     val tl   = Flipped(new OpenTitanTileLink.Host2Device(tlul_p))
     val mtip = Output(Bool())

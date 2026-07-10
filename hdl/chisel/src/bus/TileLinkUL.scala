@@ -17,15 +17,6 @@ package bus
 import chisel3._
 import chisel3.util._
 
-import coralnpu.Parameters
-
-class TLULParameters(p: Parameters) {
-  val w = p.axi2DataBits / 8
-  val a = p.axi2AddrBits
-  val z = log2Ceil(w)
-  val o = p.axi2IdBits
-  val i = 1
-}
 
 object TLULOpcodesA extends ChiselEnum {
   val PutFullData = Value(0.U(3.W))

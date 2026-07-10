@@ -26,9 +26,10 @@ import coralnpu.Parameters
   */
 class SpiMasterSpec extends AnyFreeSpec with ChiselSim with TLULTestUtils {
   val p = new Parameters
+  val tlul_p = p.toTLUL()
 
   "SpiMaster Register Access" in {
-    simulate(new SpiMasterCtrl(p)) { dut =>
+    simulate(new SpiMasterCtrl(tlul_p)) { dut =>
       dut.reset.poke(true.B)
       dut.clock.step()
       dut.reset.poke(false.B)
@@ -40,7 +41,7 @@ class SpiMasterSpec extends AnyFreeSpec with ChiselSim with TLULTestUtils {
   }
 
   "SpiMaster Loopback" in {
-    simulate(new SpiMasterCtrl(p)) { dut =>
+    simulate(new SpiMasterCtrl(tlul_p)) { dut =>
       dut.reset.poke(true.B)
       dut.clock.step()
       dut.reset.poke(false.B)
@@ -66,7 +67,7 @@ class SpiMasterSpec extends AnyFreeSpec with ChiselSim with TLULTestUtils {
   }
 
   "SpiMaster DIV Timing" in {
-    simulate(new SpiMasterCtrl(p)) { dut =>
+    simulate(new SpiMasterCtrl(tlul_p)) { dut =>
       dut.reset.poke(true.B)
       dut.clock.step()
       dut.reset.poke(false.B)
@@ -94,7 +95,7 @@ class SpiMasterSpec extends AnyFreeSpec with ChiselSim with TLULTestUtils {
   }
 
   "SpiMaster Manual CS" in {
-    simulate(new SpiMasterCtrl(p)) { dut =>
+    simulate(new SpiMasterCtrl(tlul_p)) { dut =>
       dut.reset.poke(true.B)
       dut.clock.step()
       dut.reset.poke(false.B)
@@ -114,14 +115,13 @@ class SpiMasterSpec extends AnyFreeSpec with ChiselSim with TLULTestUtils {
   }
 
   "SpiMaster Top-level Async Clocks" in {
-    val tlul_p = new TLULParameters(p)
     simulate(new Module {
       val io = IO(new Bundle {
         val tl         = Flipped(new OpenTitanTileLink.Host2Device(tlul_p))
         val spi        = new SpiIO
         val spi_clk_in = Input(Bool())
       })
-      val dut = Module(new SpiMaster(p))
+      val dut = Module(new SpiMaster(tlul_p))
       dut.io.clk_i  := clock
       dut.io.rst_ni := (!reset.asBool).asAsyncReset
       dut.io.tl <> io.tl
@@ -175,7 +175,7 @@ class SpiMasterSpec extends AnyFreeSpec with ChiselSim with TLULTestUtils {
   }
 
   "SpiMaster TX Backpressure" in {
-    simulate(new SpiMasterCtrl(p)) { dut =>
+    simulate(new SpiMasterCtrl(tlul_p)) { dut =>
       dut.reset.poke(true.B)
       dut.clock.step()
       dut.reset.poke(false.B)
@@ -194,7 +194,7 @@ class SpiMasterSpec extends AnyFreeSpec with ChiselSim with TLULTestUtils {
   }
 
   "SpiMaster RX Blocking Read" in {
-    simulate(new SpiMasterCtrl(p)) { dut =>
+    simulate(new SpiMasterCtrl(tlul_p)) { dut =>
       dut.reset.poke(true.B)
       dut.clock.step()
       dut.reset.poke(false.B)
@@ -212,7 +212,7 @@ class SpiMasterSpec extends AnyFreeSpec with ChiselSim with TLULTestUtils {
   }
 
   "SpiMaster RX Overflow Stall" in {
-    simulate(new SpiMasterCtrl(p)) { dut =>
+    simulate(new SpiMasterCtrl(tlul_p)) { dut =>
       dut.reset.poke(true.B)
       dut.clock.step()
       dut.reset.poke(false.B)
@@ -252,7 +252,7 @@ class SpiMasterSpec extends AnyFreeSpec with ChiselSim with TLULTestUtils {
   }
 
   "SpiMaster Invalid Address Access" in {
-    simulate(new SpiMasterCtrl(p)) { dut =>
+    simulate(new SpiMasterCtrl(tlul_p)) { dut =>
       dut.reset.poke(true.B)
       dut.clock.step()
       dut.reset.poke(false.B)
@@ -278,7 +278,7 @@ class SpiMasterSpec extends AnyFreeSpec with ChiselSim with TLULTestUtils {
   }
 
   "SpiMaster Mode 0 Sampling Verification" in {
-    simulate(new SpiMasterCtrl(p)) { dut =>
+    simulate(new SpiMasterCtrl(tlul_p)) { dut =>
       dut.reset.poke(true.B)
       dut.clock.step()
       dut.reset.poke(false.B)
@@ -310,7 +310,7 @@ class SpiMasterSpec extends AnyFreeSpec with ChiselSim with TLULTestUtils {
       val cpha     = mode & 1
       val ctrl_val = (cpol << 1) | (cpha << 2) | 1 // ENABLE=1
 
-      simulate(new SpiMasterCtrl(p)) { dut =>
+      simulate(new SpiMasterCtrl(tlul_p)) { dut =>
         dut.reset.poke(true.B)
         dut.clock.step()
         dut.reset.poke(false.B)
@@ -336,7 +336,7 @@ class SpiMasterSpec extends AnyFreeSpec with ChiselSim with TLULTestUtils {
   }
 
   "SpiMaster Half-Duplex RX Mode" in {
-    simulate(new SpiMasterCtrl(p)) { dut =>
+    simulate(new SpiMasterCtrl(tlul_p)) { dut =>
       dut.reset.poke(true.B)
       dut.clock.step()
       dut.reset.poke(false.B)
@@ -371,7 +371,7 @@ class SpiMasterSpec extends AnyFreeSpec with ChiselSim with TLULTestUtils {
   }
 
   "SpiMaster Half-Duplex TX Mode" in {
-    simulate(new SpiMasterCtrl(p)) { dut =>
+    simulate(new SpiMasterCtrl(tlul_p)) { dut =>
       dut.reset.poke(true.B)
       dut.clock.step()
       dut.reset.poke(false.B)

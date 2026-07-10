@@ -20,13 +20,13 @@ import bus._
 class CoreTlul(p: Parameters, coreModuleName: String) extends RawModule {
     override val desiredName = coreModuleName + "Tlul"
     val memoryRegions = p.m
-    val tlul_p = new TLULParameters(p)
+    val tlul_p = p.toTLUL()
     val io = IO(new Bundle {
         val clk = Input(Clock())
         val rst_ni = Input(AsyncReset())
 
-        val tl_host = new OpenTitanTileLink.Host2Device(new TLULParameters(p))
-        val tl_device = new OpenTitanTileLink.Device2Host(new TLULParameters(p))
+        val tl_host = new OpenTitanTileLink.Host2Device(p.toTLUL())
+        val tl_device = new OpenTitanTileLink.Device2Host(p.toTLUL())
 
         // Core status interrupts
         val halted = Output(Bool())
@@ -43,8 +43,8 @@ class CoreTlul(p: Parameters, coreModuleName: String) extends RawModule {
     dontTouch(io)
 
     val coreAxi = withClockAndReset(io.clk, io.rst_ni) { Module(new CoreAxi(p, coreModuleName)) }
-    val hostBridge = withClockAndReset(io.clk, (!io.rst_ni.asBool).asAsyncReset) { Module(new Axi2TLUL(p, () => new OpenTitanTileLink_A_User, () => new OpenTitanTileLink_D_User)) }
-    val deviceBridge = withClockAndReset(io.clk, (!io.rst_ni.asBool).asAsyncReset) { Module(new TLUL2Axi(p, p, () => new OpenTitanTileLink_A_User, () => new OpenTitanTileLink_D_User)) }
+    val hostBridge = withClockAndReset(io.clk, (!io.rst_ni.asBool).asAsyncReset) { Module(new Axi2TLUL(p.toTLUL(), () => new OpenTitanTileLink_A_User, () => new OpenTitanTileLink_D_User)) }
+    val deviceBridge = withClockAndReset(io.clk, (!io.rst_ni.asBool).asAsyncReset) { Module(new TLUL2Axi(p.toTLUL(), p.axi2DataBits, p.axi2AddrBits, p.axi2IdBits, () => new OpenTitanTileLink_A_User, () => new OpenTitanTileLink_D_User)) }
 
     coreAxi.io.aclk := io.clk
     coreAxi.io.aresetn := io.rst_ni

@@ -16,7 +16,6 @@ package bus
 
 import chisel3._
 import chisel3.util._
-import coralnpu.Parameters
 
 object PlicRegister extends ChiselEnum {
   val PENDING   = Value("h001000".U(24.W))
@@ -26,8 +25,8 @@ object PlicRegister extends ChiselEnum {
   val CLAIM     = Value("h200004".U(24.W))
 }
 
-class Plic(p: Parameters, numInterrupts: Int = 31, priorityWidth: Int = 3) extends Module {
-  val tlul_p = new TLULParameters(p)
+class Plic(p: TLULParameters, numInterrupts: Int = 31, priorityWidth: Int = 3) extends Module {
+  val tlul_p = p
   val io     = IO(new Bundle {
     val tl   = Flipped(new OpenTitanTileLink.Host2Device(tlul_p))
     val srcs = Input(UInt(numInterrupts.W))

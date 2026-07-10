@@ -46,8 +46,8 @@ class Spi2TLULV2TestWrapper extends Module {
 
   var p = new Parameters()
   p.lsuDataBits = 128
-  val tlul_p = new TLULParameters(p)
-  val v2     = Module(new Spi2TLULV2(p))
+  val tlul_p = p.toTLUL()
+  val v2     = Module(new Spi2TLULV2(tlul_p))
 
   // Clock and reset wiring
   v2.io.spi_clk   := io.spi_clk_in.asClock

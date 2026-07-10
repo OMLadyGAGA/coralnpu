@@ -40,6 +40,7 @@ chisel_library(
         "Spi2TLULV2.scala",
         "SpiMaster.scala",
         "TLUL2Axi.scala",
+        "TLULParameters.scala",
         "TileLinkUL.scala",
         "TlulFifoAsync.scala",
         "TlulFifoSync.scala",
@@ -53,7 +54,6 @@ chisel_library(
     ],
     deps = [
         "//hdl/chisel/src/common",
-        "//hdl/chisel/src/coralnpu:coralnpu_params",
         "@chipsalliance_rocket_chip//:asyncqueue",
     ],
 )

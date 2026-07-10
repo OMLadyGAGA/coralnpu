@@ -16,7 +16,6 @@ package bus
 
 import chisel3._
 import chisel3.util._
-import coralnpu.Parameters
 
 /**
   * A testbench DUT that instantiates all TlulIntegrity modules so they can be
@@ -76,10 +75,9 @@ import scala.annotation.nowarn
 
 @nowarn
 object EmitTlulIntegrityTestbench extends App {
-  val p = new Parameters
-  p.lsuDataBits = 128
+  val tlul_p = new TLULParameters(dataBits = 128, addrBits = 32, idBits = 6)
   (new ChiselStage).execute(
     Array("--target", "systemverilog") ++ args,
-    Seq(ChiselGeneratorAnnotation(() => new TlulIntegrityTestbench(new bus.TLULParameters(p)))) ++ Seq(FirtoolOption("-enable-layers=Verification"))
+    Seq(ChiselGeneratorAnnotation(() => new TlulIntegrityTestbench(tlul_p))) ++ Seq(FirtoolOption("-enable-layers=Verification"))
   )
 }

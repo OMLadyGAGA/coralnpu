@@ -18,7 +18,6 @@ import chisel3._
 import chisel3.util._
 import common.{CoralNPURRArbiter, MuBi4}
 
-import coralnpu.Parameters
 
 /**
   * Axi2TLUL: A Chisel module that serves as a bridge between an AXI4 master
@@ -33,10 +32,10 @@ import coralnpu.Parameters
   *
   * @param p The CoralNPU parameters.
   */
-class Axi2TLUL[A_USER <: Data with TLUL_A_User_InstrType, D_USER <: Data](p: Parameters, userAGen: () => A_USER, userDGen: () => D_USER) extends Module {
-  val tlul_p = new TLULParameters(p)
+class Axi2TLUL[A_USER <: Data with TLUL_A_User_InstrType, D_USER <: Data](p: TLULParameters, userAGen: () => A_USER, userDGen: () => D_USER) extends Module {
+  val tlul_p = p
   val io = IO(new Bundle {
-    val axi = Flipped(new AxiMasterIO(p.axi2AddrBits, p.axi2DataBits, p.axi2IdBits))
+    val axi = Flipped(new AxiMasterIO(p.a, p.w * 8, p.o))
     val tl_a = Decoupled(new TileLink_A_ChannelBase(tlul_p, userAGen)) // TileLink Output
     val tl_d = Flipped(Decoupled(new TileLink_D_ChannelBase(tlul_p, userDGen))) // TileLink Input
   })
@@ -51,8 +50,8 @@ class Axi2TLUL[A_USER <: Data with TLUL_A_User_InstrType, D_USER <: Data](p: Par
 
   // Read Burst Unroller
   val r_unroll_busy = RegInit(false.B)
-  val r_unroll_addr = RegInit(0.U(p.axi2AddrBits.W))
-  val r_unroll_id   = RegInit(0.U(p.axi2IdBits.W))
+  val r_unroll_addr = RegInit(0.U(p.a.W))
+  val r_unroll_id   = RegInit(0.U(p.o.W))
   val r_unroll_size = RegInit(0.U(3.W))
   val r_unroll_len  = RegInit(0.U(8.W))
   val r_unroll_burst= RegInit(0.U(2.W))
@@ -66,8 +65,8 @@ class Axi2TLUL[A_USER <: Data with TLUL_A_User_InstrType, D_USER <: Data](p: Par
   val r_current_len  = Mux(r_unroll_busy, r_unroll_len,  r_req.len)
   val r_current_burst= Mux(r_unroll_busy, r_unroll_burst,r_req.burst)
 
-  val r_beats_left = RegInit(VecInit(Seq.fill(1 << p.axi2IdBits)(0.U(8.W))))
-  val r_burst_active = RegInit(VecInit(Seq.fill(1 << p.axi2IdBits)(false.B)))
+  val r_beats_left = RegInit(VecInit(Seq.fill(1 << p.o)(0.U(8.W))))
+  val r_burst_active = RegInit(VecInit(Seq.fill(1 << p.o)(false.B)))
 
   val id_conflict = !r_unroll_busy && r_burst_active(r_req.id)
 
@@ -103,8 +102,8 @@ class Axi2TLUL[A_USER <: Data with TLUL_A_User_InstrType, D_USER <: Data](p: Par
 
   // Write Burst Unroller
   val w_unroll_busy = RegInit(false.B)
-  val w_unroll_addr = RegInit(0.U(p.axi2AddrBits.W))
-  val w_unroll_id   = RegInit(0.U(p.axi2IdBits.W))
+  val w_unroll_addr = RegInit(0.U(p.a.W))
+  val w_unroll_id   = RegInit(0.U(p.o.W))
   val w_unroll_size = RegInit(0.U(3.W))
   val w_unroll_len  = RegInit(0.U(8.W))
   val w_unroll_burst= RegInit(0.U(2.W))
@@ -118,9 +117,9 @@ class Axi2TLUL[A_USER <: Data with TLUL_A_User_InstrType, D_USER <: Data](p: Par
   val w_current_len  = Mux(w_unroll_busy, w_unroll_len,  w_req.len)
   val w_current_burst= Mux(w_unroll_busy, w_unroll_burst,w_req.burst)
 
-  val w_beats_left = RegInit(VecInit(Seq.fill(1 << p.axi2IdBits)(0.U(8.W))))
-  val w_burst_active = RegInit(VecInit(Seq.fill(1 << p.axi2IdBits)(false.B)))
-  val w_err_accum = RegInit(VecInit(Seq.fill(1 << p.axi2IdBits)(false.B)))
+  val w_beats_left = RegInit(VecInit(Seq.fill(1 << p.o)(0.U(8.W))))
+  val w_burst_active = RegInit(VecInit(Seq.fill(1 << p.o)(false.B)))
+  val w_err_accum = RegInit(VecInit(Seq.fill(1 << p.o)(false.B)))
 
   val w_id_conflict = !w_unroll_busy && w_burst_active(w_req.id)
   val w_valid = write_addr_q.valid && write_data_q.valid && !w_id_conflict
@@ -190,7 +189,7 @@ class Axi2TLUL[A_USER <: Data with TLUL_A_User_InstrType, D_USER <: Data](p: Par
 
   io.tl_d.ready := Mux(d_is_read, io.axi.read.data.ready, Mux(w_d_last, io.axi.write.resp.ready, true.B))
 
-  for (i <- 0 until (1 << p.axi2IdBits)) {
+  for (i <- 0 until (1 << p.o)) {
     val is_r_req = r_start && r_req.id === i.U
     val is_r_resp = io.tl_d.fire && d_is_read && d_source === i.U
 
@@ -213,9 +212,9 @@ import scala.annotation.nowarn
 
 @nowarn
 object EmitAxi2TLUL extends App {
-  val p = Parameters()
+  val tlul_p = new TLULParameters(dataBits = 256, addrBits = 32, idBits = 6)
   (new ChiselStage).execute(
     Array("--target", "systemverilog") ++ args,
-    Seq(ChiselGeneratorAnnotation(() => new Axi2TLUL(p, () => new OpenTitanTileLink_A_User, () => new OpenTitanTileLink_D_User))) ++ Seq(FirtoolOption("-enable-layers=Verification"))
+    Seq(ChiselGeneratorAnnotation(() => new Axi2TLUL(tlul_p, () => new OpenTitanTileLink_A_User, () => new OpenTitanTileLink_D_User))) ++ Seq(FirtoolOption("-enable-layers=Verification"))
   )
 }

@@ -18,7 +18,6 @@ import chisel3._
 import chisel3.util.MuxCase
 import bus._
 import bus.TlulWidthBridge
-import coralnpu.Parameters
 import coralnpu.MemorySize
 
 /**
@@ -88,12 +87,11 @@ class CoralNPUXbar(val hostParams: Seq[bus.TLULParameters], val deviceParams: Se
   // The top-level reset is active-low, so we invert it for the active-high
   // modules instantiated within this block.
   // Define common parameters for the unified internal bus.
-  val commonParams = {
-    val p = new Parameters
-    p.lsuDataBits = 128
-    p.axi2IdBits = 8
-    new bus.TLULParameters(p)
-  }
+  val commonParams = new bus.TLULParameters(
+    dataBits = 128,
+    addrBits = 32,
+    idBits = 8
+  )
   val commonWidth = 128
 
   // --- 2. Programmatic Instantiation and Interface Standardization ---
@@ -287,15 +285,10 @@ object CoralNPUXbarEmitter extends App {
 
   // Create a sequence of TLULParameters for hosts and devices based on the config.
   val hostParams = CrossbarConfig().hosts(enableTestHarness).map { host =>
-    val p = new Parameters
-    p.lsuDataBits = host.width
-    new bus.TLULParameters(p)
+    new bus.TLULParameters(dataBits = host.width, addrBits = 32, idBits = 6)
   }
   val deviceParams = CrossbarConfig().devices.map { device =>
-    val p = new Parameters
-    p.lsuDataBits = device.width
-    p.axi2IdBits = 10
-    new bus.TLULParameters(p)
+    new bus.TLULParameters(dataBits = device.width, addrBits = 32, idBits = 10)
   }
 
   // Use ChiselStage to generate the Verilog.

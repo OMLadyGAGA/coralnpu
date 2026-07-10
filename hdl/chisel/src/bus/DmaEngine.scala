@@ -17,11 +17,10 @@ package bus
 import chisel3._
 import chisel3.util._
 import common.{MakeValid, MakeInvalid, MuBi4}
-import coralnpu.Parameters
 
-class DmaEngine(hostParams: Parameters, deviceParams: Parameters) extends Module {
-  val hostTlulP   = new TLULParameters(hostParams)
-  val deviceTlulP = new TLULParameters(deviceParams)
+class DmaEngine(hostParams: TLULParameters, deviceParams: TLULParameters) extends Module {
+  val hostTlulP   = hostParams
+  val deviceTlulP = deviceParams
 
   val io = IO(new Bundle {
     val tl_host   = new OpenTitanTileLink.Host2Device(hostTlulP)

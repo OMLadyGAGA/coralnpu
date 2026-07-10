@@ -16,7 +16,6 @@ package bus
 
 import chisel3._
 import chisel3.util._
-import coralnpu.Parameters
 
 class Sram128IO(val addrWidth: Int) extends Bundle {
   val enable = Input(Bool())
@@ -28,8 +27,8 @@ class Sram128IO(val addrWidth: Int) extends Bundle {
   val rvalid = Output(Bool())
 }
 
-class TlulToSram(p: Parameters, sramAddressWidth: Int) extends Module {
-  val tlul_p = new TLULParameters(p)
+class TlulToSram(p: TLULParameters, sramAddressWidth: Int) extends Module {
+  val tlul_p = p
   val io = IO(new Bundle {
     val tl   = Flipped(new OpenTitanTileLink.Host2Device(tlul_p))
     val sram = Flipped(new Sram128IO(sramAddressWidth))
@@ -95,13 +94,12 @@ import chisel3.stage.ChiselGeneratorAnnotation
 
 @nowarn
 object TlulToSramEmitter extends App {
-  val p = new Parameters
-  p.lsuDataBits = 128
+  val tlul_p = new TLULParameters(dataBits = 128, addrBits = 32, idBits = 6)
   (new ChiselStage).execute(
     Array("--target", "systemverilog") ++ args,
     Seq(
       ChiselGeneratorAnnotation(() =>
-        new TlulToSram(p, 10)
+        new TlulToSram(tlul_p, 10)
       )
     ) ++ Seq(FirtoolOption("-enable-layers=Verification"))
   )

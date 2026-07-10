@@ -2,7 +2,6 @@ package bus
 
 import chisel3._
 import freechips.rocketchip.util.{AsyncQueue, AsyncQueueParams}
-import coralnpu.Parameters
 
 class TlulFifoAsync(
     p: TLULParameters,
@@ -44,14 +43,13 @@ import scala.annotation.nowarn
 
 @nowarn
 object TlulFifoAsync128Emitter extends App {
-  val p = new Parameters
-  p.lsuDataBits = 128
+  val tlul_p = new TLULParameters(dataBits = 128, addrBits = 32, idBits = 6)
   (new ChiselStage).execute(
     Array("--target", "systemverilog") ++ args,
     Seq(
       ChiselGeneratorAnnotation(() =>
         new TlulFifoAsync(
-          p = new bus.TLULParameters(p),
+          p = tlul_p,
           reqDepth = 1,
           rspDepth = 1,
           moduleName = "TlulFifoAsync128"
